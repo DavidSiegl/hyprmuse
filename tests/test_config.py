@@ -43,5 +43,12 @@ def test_unknown_keys_are_ignored():
     assert "nonsense" not in cfg
 
 
+def test_fit_keys_are_read():
+    _write("[quote]\nmax_chars = 120\nmin_line_chars = 4\n")
+    cfg = config.load_config()
+    assert cfg["max_chars"] == 120
+    assert cfg["min_line_chars"] == 4
+
+
 def test_paths_are_namespaced_under_the_app():
     assert config.APP == "hyprmuse"

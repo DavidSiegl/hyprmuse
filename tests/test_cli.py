@@ -3,6 +3,7 @@
 import pytest
 
 from hyprmuse import cli, library
+from hyprmuse.sources.base import Item
 from tests.conftest import make_subject
 
 
@@ -99,6 +100,18 @@ def test_quote_width_is_respected(capsys):
                      "--max-lines", "0"], capsys)
     body = out.out.split("\n\n")[0]
     assert all(len(l) <= 20 for l in body.splitlines())
+
+
+def test_quote_max_chars_picks_something_that_fits(capsys):
+    subj = make_subject(items=[
+        Item(lines=["word " * 40], atomic=True),
+        Item(lines=["tiny"], atomic=True),
+    ])
+    library.save(subj)
+    for _ in range(10):
+        code, out = run(["quote", "--max-chars", "10"], capsys)
+        assert code == 0
+        assert out.out.split("\n\n")[0] == "tiny"
 
 
 def test_unknown_source_is_rejected_by_the_parser(capsys):

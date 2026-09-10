@@ -23,8 +23,17 @@ the lockscreen never waits on the network.
 | `gutenberg` | prose | passages from public-domain books | public domain |
 
 Sources fall into two kinds. **Sliceable** items (lyrics, poems) are quoted as a
-random window of consecutive lines. **Atomic** items (a Wikiquote quotation, a
-prose passage) are quoted whole and word-wrapped.
+random window of consecutive lines taken from within one stanza, so a slice
+never runs from a verse into its chorus. **Atomic** items (a Wikiquote
+quotation, a prose passage) are quoted whole and word-wrapped.
+
+Every pick is checked against the box it has to fit (`width`, `max_lines`,
+`max_chars`). A window that overflows is shortened a line at a time, and an
+item that cannot fit at all is skipped in favour of another. Only when nothing
+in the library fits does the output get cut off.
+
+Libraries harvested before stanza breaks were stored still work, but slice as
+one long stanza. Run `hyprmuse update --all` once to pick the breaks up.
 
 ## Setup
 
@@ -48,6 +57,7 @@ uv run hyprmuse remove "genius:342499"
 
 uv run hyprmuse quote                          # a random quote
 uv run hyprmuse quote --domain poetry --width 50
+uv run hyprmuse quote --max-lines 4 --max-chars 160  # fit a small label
 uv run hyprmuse quote --source wikiquote --note
 uv run hyprmuse quote --seed 42                # deterministic
 ```
@@ -81,7 +91,9 @@ Optional, at `~/.config/hyprmuse/config.toml`:
 [quote]
 lines = 3           # lines taken from sliceable items
 width = 60          # wrap width, 0 disables wrapping
-max_lines = 6       # hard cap after wrapping
+max_lines = 6       # most lines after wrapping, 0 disables
+max_chars = 0       # most characters after wrapping, 0 disables
+min_line_chars = 2  # skip lines shorter than this ("-", "I") when slicing
 weighting = "subject"  # "subject" = every subject equally likely
                        # "quote"   = every quote equally likely
 avoid_repeats = 20  # don't repeat within the last N quotes

@@ -34,6 +34,84 @@ def test_short_item_returns_all_its_lines():
     assert select._extract(item, 5, random.Random(0)) == ["only", "two"]
 
 
+VERSE = ["v1", "v2", "v3", "v4"]
+CHORUS = ["c1", "c2", "c3"]
+SONG = Item(lines=VERSE + [""] + CHORUS, atomic=False)
+
+
+def test_window_never_straddles_a_stanza_break():
+    import random
+    for seed in range(50):
+        out = select._extract(SONG, 3, random.Random(seed))
+        assert "" not in out
+        assert all(l in VERSE for l in out) or all(l in CHORUS for l in out)
+
+
+def test_both_stanzas_are_reachable():
+    import random
+    firsts = {select._extract(SONG, 2, random.Random(s))[0] for s in range(50)}
+    assert firsts & set(VERSE) and firsts & set(CHORUS)
+
+
+def test_one_line_stanzas_are_avoided_when_real_ones_exist():
+    import random
+    item = Item(lines=["[tag]", "", "a", "b", "", "c", "d"], atomic=False)
+    for seed in range(30):
+        assert "[tag]" not in select._extract(item, 2, random.Random(seed))
+
+
+def test_one_line_stanza_is_used_when_nothing_else_exists():
+    import random
+    item = Item(lines=["lonely", "", "alone"], atomic=False)
+    assert select._extract(item, 3, random.Random(0)) in (["lonely"], ["alone"])
+
+
+def test_short_lines_are_dropped_by_min_chars():
+    import random
+    item = Item(lines=["Oh", "a real line", "-", "another real line"], atomic=False)
+    out = select._extract(item, 4, random.Random(0), min_chars=3)
+    assert out == ["a real line", "another real line"]
+
+
+def test_min_chars_applies_to_atomic_items_too():
+    import random
+    item = Item(lines=["A whole quotation.", "I"], atomic=True)
+    assert select._extract(item, 1, random.Random(0), min_chars=2) == ["A whole quotation."]
+
+
+def test_stored_libraries_without_breaks_slice_as_before():
+    """Files harvested before stanza marks exist behave as one long stanza."""
+    import random
+    item = Item(lines=[f"l{i}" for i in range(10)], atomic=False)
+    out = select._extract(item, 3, random.Random(0))
+    start = item.lines.index(out[0])
+    assert item.lines[start:start + 3] == out
+
+
+def test_fit_rejects_by_lines_and_chars_after_wrapping():
+    fit = select.Fit(width=10, max_lines=2, max_chars=0)
+    assert fit.accepts(["short", "lines"])
+    assert not fit.accepts(["this line is far too long to fit"])  # wraps to 4
+    assert not select.Fit(max_chars=5).accepts(["123456"])
+    assert select.UNCONSTRAINED.accepts(["x" * 1000] * 100)
+
+
+def test_window_shrinks_from_the_end_until_it_fits():
+    import random
+    item = Item(lines=["a", "b", "c", "d", "e", "f"], atomic=False)
+    fit = select.Fit(max_lines=2)
+    for seed in range(20):
+        out = select._extract(item, 4, random.Random(seed), fit=fit)
+        assert len(out) == 2
+        assert item.lines[item.lines.index(out[0]):][:2] == out
+
+
+def test_atomic_item_that_cannot_fit_is_rejected():
+    import random
+    item = Item(lines=["x" * 100], atomic=True)
+    assert select._extract(item, 3, random.Random(0), fit=select.Fit(max_chars=50)) == []
+
+
 def test_pick_returns_none_on_empty_library():
     assert select.pick(cfg(), num_lines=3) is None
 
@@ -142,3 +220,28 @@ def test_unreadable_recent_file_is_tolerated():
 def test_subjects_with_no_items_are_skipped():
     library.save(make_subject(items=[]))
     assert select.pick(cfg(), num_lines=2) is None
+
+
+def test_pick_prefers_an_item_that_fits():
+    library.save(make_subject(items=[
+        Item(lines=["a " * 60], atomic=True),
+        Item(lines=["fits"], atomic=True),
+    ]))
+    fit = select.Fit(width=20, max_lines=2)
+    for _ in range(20):
+        assert select.pick(cfg(avoid_repeats=0), num_lines=1, fit=fit).lines == ["fits"]
+
+
+def test_pick_falls_back_when_nothing_fits():
+    """A trimmed quote beats a blank lockscreen."""
+    library.save(make_subject(items=[Item(lines=["a " * 60], atomic=True)]))
+    chosen = select.pick(cfg(), num_lines=1, fit=select.Fit(width=20, max_lines=1))
+    assert chosen is not None and chosen.lines == [("a " * 60).strip()]
+
+
+def test_pick_honours_min_line_chars_from_config():
+    library.save(make_subject(items=[Item(lines=["Oh", "a proper line"])]))
+    chosen = select.pick(cfg(min_line_chars=3), num_lines=2)
+    assert chosen.lines == ["a proper line"]
+    chosen = select.pick(cfg(min_line_chars=0, avoid_repeats=0), num_lines=2)
+    assert chosen.lines == ["Oh", "a proper line"]

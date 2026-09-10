@@ -144,9 +144,12 @@ def cmd_quote(args) -> int:
     num_lines = args.lines if args.lines is not None else cfg["lines"]
     width = args.width if args.width is not None else cfg["width"]
     max_lines = args.max_lines if args.max_lines is not None else cfg["max_lines"]
+    max_chars = args.max_chars if args.max_chars is not None else cfg["max_chars"]
 
+    fit = select.Fit(width=width, max_lines=max_lines, max_chars=max_chars)
     chosen = select.pick(cfg, num_lines=num_lines, subject=args.subject,
-                         domain=args.domain, source=args.source, seed=args.seed)
+                         domain=args.domain, source=args.source, seed=args.seed,
+                         fit=fit)
     if chosen is None:
         print("No quotes stored yet — run: hyprmuse add \"Franz Kafka\"")
         return 0
@@ -200,7 +203,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--lines", type=int, default=None,
                     help="lines to take from sliceable items")
     sp.add_argument("--width", type=int, default=None, help="wrap width, 0 disables")
-    sp.add_argument("--max-lines", type=int, default=None, help="hard cap on lines")
+    sp.add_argument("--max-lines", type=int, default=None,
+                    help="most lines after wrapping; shorter picks are preferred")
+    sp.add_argument("--max-chars", type=int, default=None,
+                    help="most characters after wrapping, 0 disables")
     sp.add_argument("--subject", default="", help="restrict to one subject")
     sp.add_argument("--domain", default="", help="restrict to a domain")
     sp.add_argument("--source", default="", help="restrict to a source")

@@ -22,9 +22,10 @@ DEFAULTS = {
     "lines": 3,
     "width": 60,
     "max_lines": 6,
+    "max_chars": 0,  # total characters after wrapping, 0 = unlimited
     "weighting": "subject",  # "subject" or "quote"
     "avoid_repeats": 20,
-    "min_line_chars": 2,
+    "min_line_chars": 2,  # lines shorter than this ("-", "I") are skipped when slicing
 }
 
 

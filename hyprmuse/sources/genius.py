@@ -7,6 +7,7 @@ import time
 
 from bs4 import BeautifulSoup
 
+from ..text import mark_stanzas
 from .base import Candidate, Item, Source, SourceError, Subject, get
 
 API = "https://genius.com/api"
@@ -24,7 +25,9 @@ def clean_lines(raw: str) -> list[str]:
     """Strip Genius boilerplate once, at harvest time.
 
     Anchored to line position and shape rather than substring-matched, so a
-    genuine lyric containing a word like "lyrics" survives.
+    genuine lyric containing a word like "lyrics" survives. Blank lines and
+    [Section] markers both become a single blank line: the stanza break the
+    selector slices within.
     """
     lines = [ln.strip() for ln in raw.split("\n")]
 
@@ -46,12 +49,14 @@ def clean_lines(raw: str) -> list[str]:
 
     out = []
     for line in lines:
-        if not line or _SECTION.match(line) or _EMBED.match(line):
+        if not line or _SECTION.match(line):
+            out.append("")
+        elif _EMBED.match(line) or _ALSO_LIKE.match(line) or _CONTRIBUTORS.match(line):
             continue
-        if _ALSO_LIKE.match(line) or _CONTRIBUTORS.match(line):
-            continue
-        out.append(line)
+        else:
+            out.append(line)
 
+    out = mark_stanzas(out)
     if not sectioned:
         out = _strip_blurb(out)
     return out
@@ -65,12 +70,16 @@ def _strip_blurb(lines: list[str]) -> list[str]:
     ending in sentence punctuation - while lyric lines are short and mostly
     unpunctuated at the end.
     """
-    while len(lines) >= 6:
-        head, rest = lines[0], lines[1:]
+    while True:
+        lines = mark_stanzas(lines)  # so lines[0] is the first real line
+        body = [x for x in lines if x]
+        if len(body) < 6:
+            break
+        head, rest = body[0], body[1:]
         median = statistics.median(len(x) for x in rest)
         if (len(head) >= 80 and head[-1] in ".!?"
                 and len(head) >= 1.8 * max(median, 1)):
-            lines = rest
+            lines = lines[1:]
             continue
         break
     return lines

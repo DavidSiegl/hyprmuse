@@ -2,6 +2,7 @@
 
 import difflib
 
+from ..text import mark_stanzas
 from .base import Candidate, Item, Source, SourceError, Subject, get
 
 API = "https://poetrydb.org"
@@ -38,7 +39,7 @@ class PoetryDB:
             raise SourceError(f"poetrydb: no poems for {cand.name}")
         items = []
         for poem in poems:
-            lines = [ln.strip() for ln in poem.get("lines", []) if ln.strip()]
+            lines = mark_stanzas(poem.get("lines", []))  # blanks = stanza breaks
             if lines:
                 items.append(Item(lines=lines, work=poem.get("title", ""),
                                   url=cand.url, atomic=False))

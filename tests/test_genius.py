@@ -8,6 +8,8 @@ SONG_LINES = [
     "Nobody waves from the platform",
     "And the rain keeps its own time",
 ]
+# The same song once sectioned: the [Refrain] marker becomes a stanza break.
+SONG_STANZAS = SONG_LINES[:2] + [""] + SONG_LINES[2:]
 
 
 def build(*, header=True, sections=True, blurb=None, body=None, tail=True):
@@ -30,7 +32,7 @@ def build(*, header=True, sections=True, blurb=None, body=None, tail=True):
 
 
 def test_strips_header_sections_and_tail():
-    assert clean_lines(build()) == SONG_LINES
+    assert clean_lines(build()) == SONG_STANZAS
 
 
 def test_drops_contributor_and_embed_markers():
@@ -40,10 +42,16 @@ def test_drops_contributor_and_embed_markers():
     assert not any("might also like" in l for l in out)
 
 
-def test_section_markers_removed_but_content_kept():
+def test_section_markers_become_stanza_breaks():
     out = clean_lines(build())
     assert not any(l.startswith("[") and l.endswith("]") for l in out)
-    assert len(out) == len(SONG_LINES)
+    assert [l for l in out if l] == SONG_LINES
+    assert out.count("") == 1
+
+
+def test_blank_runs_collapse_and_edges_are_trimmed():
+    raw = "\n".join(["[Verse]", "", "", "one", "two", "", "", "[Chorus]", "", "three", ""])
+    assert clean_lines(raw) == ["one", "two", "", "three"]
 
 
 def test_regression_keeps_line_containing_the_word_lyrics():
@@ -67,7 +75,7 @@ def test_blurb_kept_when_song_is_sectioned():
     blurb = ("This song was recorded in a single afternoon and became the "
              "best known track from the album that followed it.")
     out = clean_lines(build(sections=True, blurb=blurb))
-    assert out == SONG_LINES
+    assert out == SONG_STANZAS
 
 
 def test_short_song_is_never_blurb_trimmed():
