@@ -85,6 +85,36 @@ def _strip_blurb(lines: list[str]) -> list[str]:
     return lines
 
 
+# Stands in for a <br> while the surrounding markup whitespace is collapsed.
+_BREAK = "\x00"
+
+
+def lyrics_text(html: str) -> str | None:
+    """Flatten a Genius lyrics page to text, with <br> as the only line break.
+
+    Genius wraps annotated phrases in inline <a> elements, so the element tree
+    carries no line structure of its own: only <br> does, one per line and two
+    per stanza break. Every other newline in the markup is layout whitespace.
+    Treating those as breaks too - which joining the text nodes with a "\n"
+    separator did - both split an annotated line in three and doubled every
+    real break, so every line became its own stanza; since the selector slices
+    within a stanza, no pick could ever be longer than a single line.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    containers = soup.find_all("div", attrs={"data-lyrics-container": "true"})
+    if not containers:
+        return None
+    chunks = []
+    for container in containers:
+        for excluded in container.find_all(attrs={"data-exclude-from-selection": "true"}):
+            excluded.decompose()
+        for br in container.find_all("br"):
+            br.replace_with(_BREAK)
+        lines = [" ".join(part.split()) for part in container.get_text().split(_BREAK)]
+        chunks.append("\n".join(lines).strip())
+    return "\n\n".join(chunks).strip()
+
+
 class Genius:
     name = "genius"
     domain = "music"
@@ -134,18 +164,7 @@ class Genius:
             resp = get(url, key="genius")
         except SourceError:
             return None
-        soup = BeautifulSoup(resp.text, "lxml")
-        containers = soup.find_all("div", attrs={"data-lyrics-container": "true"})
-        if not containers:
-            return None
-        chunks = []
-        for container in containers:
-            for excluded in container.find_all(attrs={"data-exclude-from-selection": "true"}):
-                excluded.decompose()
-            for br in container.find_all("br"):
-                br.replace_with("\n")
-            chunks.append(container.get_text(separator="\n").strip())
-        return "\n\n".join(chunks).strip()
+        return lyrics_text(resp.text)
 
     def fetch(self, cand: Candidate, progress=None) -> Subject:
         subject = Subject(
