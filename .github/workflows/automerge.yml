@@ -68,11 +68,15 @@ jobs:
               continue
             fi
             # Both sides of a rename: moving a file out of .github/ changes .github/ too. The
-            # files endpoint lists at most 3000 files, so a larger pull request is held.
+            # files endpoint lists at most 3000 files, so a larger pull request is held. A name
+            # with a control character fails the query here, before $(...) and the line-based
+            # checks below can strip or split it.
             if ! paths=$(gh api --paginate "repos/$GH_REPO/pulls/$pr/files" \
-              --jq '.[] | .filename, (.previous_filename // empty)') || ((changed >= 3000)); then
-              echo "#$pr: could not list all its files; held for a human"
-            elif grep -vqE '^(hyprmuse|tests)/[^[:cntrl:]]*\.py$|^(docs/[^[:cntrl:]]*)?[^/[:cntrl:]]*\.md$' <<<"$paths" ||
+              --jq '.[] | .filename, (.previous_filename // empty)
+                    | if test("\\p{Cc}") then error("a file name holds a control character") else . end') ||
+              ((changed >= 3000)); then
+              echo "#$pr: could not list all its files, or one's name holds a control character; held for a human"
+            elif grep -vqE '^(hyprmuse|tests)/.*\.py$|^(docs/.*)?[^/]*\.md$' <<<"$paths" ||
               grep -qE '(^|/)conftest\.py$' <<<"$paths"; then
               echo "#$pr: changes files outside what auto-merge lands; held for a human"
             # The files endpoint has no mode, so the head commit's tree gives it: a listed path
