@@ -151,7 +151,7 @@ def cmd_quote(args) -> int:
         print("No quotes stored yet — run: hyprmuse add \"Franz Kafka\"")
         return 0
     print(render.render(chosen, width=width, max_lines=max_lines,
-                        show_note=args.note))
+                        max_chars=max_chars, show_note=args.note))
     return 0
 
 
