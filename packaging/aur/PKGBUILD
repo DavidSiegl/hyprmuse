@@ -1,0 +1,30 @@
+# Maintainer: David Siegl <david dot siegl95 at gmail dot com>
+#
+# Packages the binary Jenkins publishes with each GitHub release. packaging/aur/update.sh
+# moves pkgver and sha256sums to a release and regenerates .SRCINFO; edit anything else here.
+
+pkgname=hyprmuse-bin
+pkgver=0.3.1
+pkgrel=1
+pkgdesc='Random quotes from musicians, authors and poets for hyprlock'
+arch=(x86_64)
+url='https://github.com/DavidSiegl/hyprmuse'
+license=(MIT)
+# PyInstaller bundles Python and every package; its bootloader loads only these.
+depends=(glibc zlib)
+provides=(hyprmuse)
+conflicts=(hyprmuse)
+# Each renamed per version, so a source cache holding several versions keeps them apart.
+source=("hyprmuse-$pkgver::$url/releases/download/v$pkgver/hyprmuse-linux-x86_64"
+        "hyprmuse-$pkgver-third-party-licenses.txt::$url/releases/download/v$pkgver/hyprmuse-third-party-licenses.txt"
+        "hyprmuse-$pkgver-LICENSE::https://raw.githubusercontent.com/DavidSiegl/hyprmuse/v$pkgver/LICENSE")
+sha256sums=('f504862e9fb741ac79c7b596020c7f1bf1f58525d3d31ef67766d534c68e04ba'
+            '72d55f0afaae052e93ab8126a3e45c805a645c840d545bc3ed79e554d8293df5'
+            'ed0d9881b2d2ceee18fae064011c650eb7b5c900aaa80d53a4c40b6b15ff277c')
+
+package() {
+    install -Dm755 "hyprmuse-$pkgver" "$pkgdir/usr/bin/hyprmuse"
+    install -Dm644 "hyprmuse-$pkgver-LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 "hyprmuse-$pkgver-third-party-licenses.txt" \
+        "$pkgdir/usr/share/licenses/$pkgname/third-party-licenses.txt"
+}
