@@ -47,12 +47,6 @@ sha256sum -c hyprmuse-linux-x86_64.sha256
 install -D -m 755 hyprmuse-linux-x86_64 ~/.local/bin/hyprmuse
 ```
 
-Or install it from PyPI, which needs Python 3.14; uv fetches it if the system has none:
-
-```bash
-uv tool install hyprmuse     # or: pipx install hyprmuse
-```
-
 Or run it from a checkout with `uv sync`, then `uv run hyprmuse` in place of `hyprmuse`
 below.
 
@@ -146,9 +140,9 @@ package's or the tests' Python, or Markdown, merges into `main` without a human.
 `docs/agents/README.md` has the exact rule and how to hold a pull request back.
 
 A merge into `main` that raises `version` in `pyproject.toml` releases it: Jenkins builds
-the binary with `packaging/build-binary.sh`, and the sdist and wheel with `uv build`, and
-publishes them as release `v<version>`. The Jenkins job `hyprmuse-pypi`
-(`packaging/pypi/Jenkinsfile`) then uploads the sdist and wheel to PyPI.
+the binary with `packaging/build-binary.sh` and publishes it as release `v<version>`. The
+Jenkins job `hyprmuse-pypi` (`packaging/pypi/Jenkinsfile`) then builds that release's tag
+on a trusted node and uploads the sdist and wheel to PyPI.
 
 ## License
 

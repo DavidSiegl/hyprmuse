@@ -1,5 +1,5 @@
-// The hyprmuse-pypi job: uploads the latest GitHub release's sdist and wheel to PyPI with
-// packaging/pypi/publish.sh. A build that finds PyPI current uploads nothing.
+// The hyprmuse-pypi job: builds the latest GitHub release's tag and uploads its sdist and wheel
+// to PyPI with packaging/pypi/publish.sh. A build that finds PyPI current uploads nothing.
 //
 // It holds the PyPI token, so it is a Pipeline job of its own, not part of the multibranch
 // job, whose pull-request builds run their own Jenkinsfiles on the untrusted agent before
@@ -9,7 +9,8 @@
 //   - in its folder's credential store, a "Secret text" credential with ID pypi-hyprmuse,
 //     a PyPI API token (account-wide for the first upload, then scoped to the project);
 //   - a node labelled trusted that no agent-written build can reach (Job Restrictions), with
-//     bash, curl and uv.
+//     bash, curl, git, tar and uv;
+//   - one "Build Now", since Jenkins registers the triggers below only once the job has run.
 pipeline {
     agent { label 'trusted' }
 
