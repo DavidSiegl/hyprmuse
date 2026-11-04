@@ -84,22 +84,28 @@ pipeline {
                     sh '''
                         version=$(uv version --short --frozen)
                         tag="v$version"
-                        # Prints the tag of a release, or of the latest with no argument; exits 0 for
-                        # a release, 1 for none, and fails the build on any other error, such as a bad
-                        # token, rather than release twice.
+                        # Prints the tag of a release, or of the latest with no argument. Returns 0 for
+                        # a release, 1 for none, and 2 for any other error, such as a bad token, which
+                        # each caller fails the build on rather than release twice or over a newer one.
+                        # A status, not an exit, since the latest is asked for in a subshell.
                         release_tag() {
                             if gh release view "$@" --json tagName --jq .tagName 2>gh-release-view.err; then
                                 return 0
                             fi
                             grep -q 'release not found' gh-release-view.err && return 1
                             cat gh-release-view.err >&2
-                            exit 1
+                            return 2
                         }
-                        if release_tag "$tag" >/dev/null; then
-                            echo "$tag is already released"
-                            exit 0
-                        fi
-                        latest=$(release_tag) || latest=
+                        found=0
+                        release_tag "$tag" >/dev/null || found=$?
+                        case $found in
+                            0) echo "$tag is already released"; exit 0 ;;
+                            1) ;;
+                            *) exit 1 ;;
+                        esac
+                        found=0
+                        latest=$(release_tag) || found=$?
+                        [ "$found" -le 1 ] || exit 1
                         if [ -n "$latest" ] && \
                                 [ "$(printf '%s\\n%s\\n' "$latest" "$tag" | sort -V | tail -n 1)" != "$tag" ]; then
                             echo "pyproject.toml's version $version is below the latest release $latest" >&2
