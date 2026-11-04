@@ -116,3 +116,12 @@ author with nine quotes.
 ```
 
 Harvested text lives outside the repository, so scraped content stays out of git.
+
+## Development
+
+```bash
+uv run pytest      # the tests
+scripts/gate       # the tests with coverage, then the quality gate CI runs; writes quality.md
+```
+
+`docs/agents/README.md` says how a pull request is checked and merged.
