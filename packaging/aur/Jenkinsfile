@@ -13,7 +13,6 @@
 //     bash, curl, git, ssh and sha256sum;
 //   - one "Build Now" to create the AUR package, unless main builds first.
 pipeline {
-pipeline {
     agent { label 'trusted' }
 
     triggers {

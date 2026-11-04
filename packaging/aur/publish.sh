@@ -9,6 +9,7 @@
 #   - the same: does nothing;
 #   - different, and pkgver-pkgrel newer than the AUR's: pushes them as one commit (the first
 #     push creates the package);
+#   - the AUR's pkgver above the latest release's: fails, leaving the AUR as it is;
 #   - different, but not newer: fails, since helpers would not offer it as an upgrade. A change
 #     to the PKGBUILD alone needs it moved to the latest release with update.sh, then pkgrel raised.
 # A latest release whose tag is not v<numbers and dots> (a pre-release made latest) is skipped
@@ -73,11 +74,17 @@ release_of() {
     sed -n -e 's/^\tpkgver = //p' "$1" | tr '\n' '-'
     sed -n -e 's/^\tpkgrel = //p' "$1"
 }
+# True when version $1 is above $2. Both are numeric (pkgver, or pkgver-pkgrel), so sort -V orders
+# them as pacman's vercmp does.
+newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]; }
 new=$(release_of "$work/pkg/.SRCINFO")
 if [ -f "$work/aur/.SRCINFO" ]; then
     old=$(release_of "$work/aur/.SRCINFO")
-    # Numeric pkgver and pkgrel, so sort -V orders them as pacman's vercmp does.
-    if [ "$new" = "$old" ] || [ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n 1)" != "$new" ]; then
+    if newer "${old%-*}" "$version"; then
+        echo "$0: the AUR has $old, ahead of the latest release v$version; it stays as it is until a" \
+             "newer release, or until it is set back by hand" >&2
+        exit 1
+    elif ! newer "$new" "$old"; then
         echo "$0: the PKGBUILD differs from the AUR's, but $new is not newer than its $old;" \
              "run packaging/aur/update.sh $version, then raise pkgrel in packaging/aur/PKGBUILD" >&2
         exit 1
