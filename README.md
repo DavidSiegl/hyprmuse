@@ -120,8 +120,11 @@ Harvested text lives outside the repository, so scraped content stays out of git
 ## Development
 
 ```bash
-uv run pytest      # the tests
-scripts/gate       # the tests with coverage, then the quality gate CI runs; writes quality.md
+uv run pytest               # the tests
+scripts/gate origin/main    # the tests with coverage, then octoflow-ai's quality gate on
+                            # the change since origin/main, as Jenkins runs it; writes quality.md
 ```
 
-`docs/agents/README.md` says how a pull request is checked and merged.
+Opening a pull request hands it over: once Jenkins passes it, one that changes only the
+package's or the tests' Python, or Markdown, merges into `main` without a human.
+`docs/agents/README.md` has the exact rule and how to hold a pull request back.
