@@ -23,6 +23,12 @@ pipeline {
         stage('Install') {
             steps {
                 sh 'uv sync --frozen'
+                script {
+                    // The version a release on main is tagged with.
+                    env.PROJECT_VERSION = sh(returnStdout: true, script: '''
+                        uv run --frozen python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])'
+                    ''').trim()
+                }
             }
         }
 
@@ -54,6 +60,45 @@ pipeline {
                     } else if (status != 0) {
                         error("the gate could not judge the change (exit status ${status})")
                     }
+                }
+            }
+        }
+
+        // The Linux binary, built on every pull request and main build, so a change that
+        // breaks it fails before it is merged; Release attaches it.
+        stage('Package') {
+            steps {
+                sh 'packaging/build-binary.sh'
+            }
+        }
+
+        // A merge into main that raises the version in pyproject.toml releases it; any other
+        // merge finds that release already there, so a change goes out with the next raise.
+        // No check forces a pull request to raise it, as octoflow-ai's Version stage does:
+        // a change to pyproject.toml holds a pull request for a human (automerge.yml), so
+        // that would hold every code change. gh creates the tag v<version> on GitHub at the
+        // commit built, so Jenkins needs no git push credentials.
+        stage('Release') {
+            when { branch 'main' }
+            steps {
+                withCredentials([string(credentialsId: 'GitHub-Agents', variable: 'GH_TOKEN')]) {
+                    sh '''
+                        # Install sets it, so a restart from this stage, which skips Install, has none and must not release "v".
+                        : "${PROJECT_VERSION:?is unset; run the whole build, not a restart from the Release stage}"
+                        tag="v$PROJECT_VERSION"
+                        if gh release view "$tag" >/dev/null 2>gh-release-view.err; then
+                            echo "$tag is already released"
+                            exit 0
+                        fi
+                        # Anything but a missing release, e.g. a bad token, must fail rather than release twice.
+                        if ! grep -q 'release not found' gh-release-view.err; then
+                            cat gh-release-view.err >&2
+                            exit 1
+                        fi
+                        gh release create "$tag" \
+                            dist/hyprmuse-linux-x86_64 dist/hyprmuse-linux-x86_64.sha256 \
+                            --target "$(git rev-parse HEAD)" --title "$tag" --generate-notes
+                    '''
                 }
             }
         }

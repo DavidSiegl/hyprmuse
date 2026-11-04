@@ -12,3 +12,7 @@ lyrics.json
 coverage.xml
 test-results.xml
 quality.md
+
+# What packaging/build-binary.sh writes
+build/
+dist/

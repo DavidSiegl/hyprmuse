@@ -37,29 +37,38 @@ one long stanza. Run `hyprmuse update --all` once to pick the breaks up.
 
 ## Setup
 
+Download the Linux binary from the [latest release](https://github.com/DavidSiegl/hyprmuse/releases/latest),
+which needs no Python, and check it:
+
 ```bash
-uv sync
+curl -LO https://github.com/DavidSiegl/hyprmuse/releases/latest/download/hyprmuse-linux-x86_64
+curl -LO https://github.com/DavidSiegl/hyprmuse/releases/latest/download/hyprmuse-linux-x86_64.sha256
+sha256sum -c hyprmuse-linux-x86_64.sha256
+install -m 755 hyprmuse-linux-x86_64 ~/.local/bin/hyprmuse
 ```
+
+Or run it from a checkout with `uv sync`, then `uv run hyprmuse` in place of `hyprmuse`
+below.
 
 ## Usage
 
 ```bash
 # add subjects — omit --source to search every source and pick from a list
-uv run hyprmuse add "Element of Crime" --source genius
-uv run hyprmuse add "Ingeborg Bachmann" --source wikiquote --lang de
-uv run hyprmuse add "Emily Dickinson" --source poetrydb
-uv run hyprmuse add "Frankenstein" --source gutenberg
+hyprmuse add "Element of Crime" --source genius
+hyprmuse add "Ingeborg Bachmann" --source wikiquote --lang de
+hyprmuse add "Emily Dickinson" --source poetrydb
+hyprmuse add "Frankenstein" --source gutenberg
 
-uv run hyprmuse search "Nietzsche" --lang de   # look without harvesting
-uv run hyprmuse list                           # what's stored
-uv run hyprmuse update --all                   # re-harvest everything
-uv run hyprmuse remove "genius:342499"
+hyprmuse search "Nietzsche" --lang de   # look without harvesting
+hyprmuse list                           # what's stored
+hyprmuse update --all                   # re-harvest everything
+hyprmuse remove "genius:342499"
 
-uv run hyprmuse quote                          # a random quote
-uv run hyprmuse quote --domain poetry --width 50
-uv run hyprmuse quote --max-lines 4 --max-chars 160  # fit a small label
-uv run hyprmuse quote --source wikiquote --note
-uv run hyprmuse quote --seed 42                # deterministic
+hyprmuse quote                          # a random quote
+hyprmuse quote --domain poetry --width 50
+hyprmuse quote --max-lines 4 --max-chars 160  # fit a small label
+hyprmuse quote --source wikiquote --note
+hyprmuse quote --seed 42                # deterministic
 ```
 
 `--lang` selects the Wikiquote language edition (`de`, `en`, `fr`, …). Harvesting
@@ -70,7 +79,7 @@ is throttled and cached; `add` is the slow step, `quote` reads only local files.
 ```ini
 label {
     monitor =
-    text = cmd[update:0] /path/to/hyprmuse/.venv/bin/hyprmuse quote --width 60
+    text = cmd[update:0] ~/.local/bin/hyprmuse quote --width 60
     color = rgba(200, 200, 200, 1.0)
     font_size = 20
     font_family = Noto Sans
@@ -80,6 +89,7 @@ label {
 }
 ```
 
+From a checkout, the command is `/path/to/hyprmuse/.venv/bin/hyprmuse`.
 `quote.py` is kept as a compatibility shim, so an existing config pointing at
 `/path/to/hyprmuse/quote.py` keeps working — only the directory name changed.
 
@@ -128,3 +138,6 @@ scripts/gate origin/main    # the tests with coverage, then octoflow-ai's qualit
 Opening a pull request hands it over: once Jenkins passes it, one that changes only the
 package's or the tests' Python, or Markdown, merges into `main` without a human.
 `docs/agents/README.md` has the exact rule and how to hold a pull request back.
+
+A merge into `main` that raises `version` in `pyproject.toml` releases it: Jenkins builds
+the binary with `packaging/build-binary.sh` and publishes it as release `v<version>`.
