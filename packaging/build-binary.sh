@@ -1,7 +1,8 @@
 #!/bin/sh
 # Build dist/hyprmuse-linux-<arch>, a PyInstaller one-file binary of the hyprmuse command with Python and its
-# dependencies inside, write its .sha256 beside it, and smoke-test it offline. Jenkins's Package stage runs it on
-# every build, and its Release stage attaches what it builds. Linux only, since hyprlock is. The binary links the C
+# dependencies inside, write its .sha256 beside it and the licenses of what it bundles to
+# dist/hyprmuse-third-party-licenses.txt, and smoke-test it offline. Jenkins's Package stage runs it on every
+# build, and its Release stage attaches what it builds. Linux only, since hyprlock is. The binary links the C
 # library of the machine it was built on, so it runs on that glibc or a newer one.
 set -eu
 
@@ -32,6 +33,9 @@ for want in bs4.builder._lxml 'lxml/etree\.' certifi/cacert.pem; do
         || { echo "build-binary.sh: $bin bundles no $want" >&2; exit 1; }
 done
 
+printf '%s\n' "$contents" | uv run --frozen --group build python packaging/third_party_notices.py \
+    > dist/hyprmuse-third-party-licenses.txt
+
 # The smoke test runs against a library of its own, so it neither reads nor writes the builder's.
 home=$(mktemp -d)
 trap 'rm -rf "$home"' EXIT
@@ -50,4 +54,4 @@ case "$quote" in
     *) echo "build-binary.sh: $bin quote printed: $quote" >&2; exit 1 ;;
 esac
 
-echo "built $bin and $bin.sha256"
+echo "built $bin, $bin.sha256 and dist/hyprmuse-third-party-licenses.txt"
