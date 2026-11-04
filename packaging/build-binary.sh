@@ -23,6 +23,15 @@ uv run --frozen --group build pyinstaller --onefile --name "$name" --noconfirm -
 
 (cd dist && sha256sum "$name" > "$name.sha256")
 
+# What only harvesting imports, which no offline run reaches: bs4 finds its lxml builder
+# by a guarded import and would fail only at the first parse, and requests needs certifi's
+# CA bundle. So each must be in the archive by name.
+contents=$(uv run --frozen --group build pyi-archive_viewer -r -b "$bin")
+for want in bs4.builder._lxml 'lxml/etree\.' certifi/cacert.pem; do
+    printf '%s\n' "$contents" | grep -q "^ *$want" \
+        || { echo "build-binary.sh: $bin bundles no $want" >&2; exit 1; }
+done
+
 # The smoke test runs against a library of its own, so it neither reads nor writes the builder's.
 home=$(mktemp -d)
 trap 'rm -rf "$home"' EXIT
@@ -34,7 +43,11 @@ EOF
 echo "smoke test: $bin --help"
 "$bin" --help >/dev/null
 echo "smoke test: $bin quote"
-XDG_DATA_HOME="$home/data" XDG_CONFIG_HOME="$home/config" "$bin" quote --seed 1 \
-    | grep -q 'the binary starts and quotes'
+# Captured rather than piped, so that set -e sees the binary's own exit status.
+quote=$(XDG_DATA_HOME="$home/data" XDG_CONFIG_HOME="$home/config" "$bin" quote --seed 1)
+case "$quote" in
+    *'the binary starts and quotes'*) ;;
+    *) echo "build-binary.sh: $bin quote printed: $quote" >&2; exit 1 ;;
+esac
 
 echo "built $bin and $bin.sha256"

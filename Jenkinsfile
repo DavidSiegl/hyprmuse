@@ -13,6 +13,9 @@ pipeline {
     options {
         buildDiscarder(logRotator(numToKeepStr: '30'))
         timeout(time: 60, unit: 'MINUTES')
+        // One build per branch at a time, so two builds of main cannot both find a
+        // version unreleased and race to release it (stage Release).
+        disableConcurrentBuilds()
     }
 
     environment {
@@ -23,12 +26,6 @@ pipeline {
         stage('Install') {
             steps {
                 sh 'uv sync --frozen'
-                script {
-                    // The version a release on main is tagged with.
-                    env.PROJECT_VERSION = sh(returnStdout: true, script: '''
-                        uv run --frozen python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])'
-                    ''').trim()
-                }
             }
         }
 
@@ -72,31 +69,47 @@ pipeline {
             }
         }
 
-        // A merge into main that raises the version in pyproject.toml releases it; any other
-        // merge finds that release already there, so a change goes out with the next raise.
-        // No check forces a pull request to raise it, as octoflow-ai's Version stage does:
-        // a change to pyproject.toml holds a pull request for a human (automerge.yml), so
-        // that would hold every code change. gh creates the tag v<version> on GitHub at the
-        // commit built, so Jenkins needs no git push credentials.
+        // A merge into main that raises the version in pyproject.toml above the latest
+        // release releases it; any other merge finds that release already there, so a change
+        // goes out with the next raise, and one that lowers the version fails the build
+        // rather than replace what releases/latest serves. No check forces a pull request
+        // to raise it, as octoflow-ai's Version stage does: a change to pyproject.toml holds
+        // a pull request for a human (automerge.yml), so that would hold every code change.
+        // gh creates the tag v<version> on GitHub at the commit built, so Jenkins needs no
+        // git push credentials.
         stage('Release') {
             when { branch 'main' }
             steps {
                 withCredentials([string(credentialsId: 'GitHub-Agents', variable: 'GH_TOKEN')]) {
                     sh '''
-                        # Install sets it, so a restart from this stage, which skips Install, has none and must not release "v".
-                        : "${PROJECT_VERSION:?is unset; run the whole build, not a restart from the Release stage}"
-                        tag="v$PROJECT_VERSION"
-                        if gh release view "$tag" >/dev/null 2>gh-release-view.err; then
+                        version=$(uv version --short --frozen)
+                        tag="v$version"
+                        # Prints the tag of a release, or of the latest with no argument; exits 0 for
+                        # a release, 1 for none, and fails the build on any other error, such as a bad
+                        # token, rather than release twice.
+                        release_tag() {
+                            if gh release view "$@" --json tagName --jq .tagName 2>gh-release-view.err; then
+                                return 0
+                            fi
+                            grep -q 'release not found' gh-release-view.err && return 1
+                            cat gh-release-view.err >&2
+                            exit 1
+                        }
+                        if release_tag "$tag" >/dev/null; then
                             echo "$tag is already released"
                             exit 0
                         fi
-                        # Anything but a missing release, e.g. a bad token, must fail rather than release twice.
-                        if ! grep -q 'release not found' gh-release-view.err; then
-                            cat gh-release-view.err >&2
+                        latest=$(release_tag) || latest=
+                        if [ -n "$latest" ] && \
+                                [ "$(printf '%s\\n%s\\n' "$latest" "$tag" | sort -V | tail -n 1)" != "$tag" ]; then
+                            echo "pyproject.toml's version $version is below the latest release $latest" >&2
                             exit 1
                         fi
-                        gh release create "$tag" \
-                            dist/hyprmuse-linux-x86_64 dist/hyprmuse-linux-x86_64.sha256 \
+                        # Whatever packaging/build-binary.sh built for this agent's architecture,
+                        # which names it.
+                        set -- dist/hyprmuse-linux-*
+                        [ -f "$1" ] || { echo "no binary in dist/; run the whole build" >&2; exit 1; }
+                        gh release create "$tag" "$@" \
                             --target "$(git rev-parse HEAD)" --title "$tag" --generate-notes
                     '''
                 }

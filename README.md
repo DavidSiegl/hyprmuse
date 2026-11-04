@@ -44,7 +44,7 @@ which needs no Python, and check it:
 curl -LO https://github.com/DavidSiegl/hyprmuse/releases/latest/download/hyprmuse-linux-x86_64
 curl -LO https://github.com/DavidSiegl/hyprmuse/releases/latest/download/hyprmuse-linux-x86_64.sha256
 sha256sum -c hyprmuse-linux-x86_64.sha256
-install -m 755 hyprmuse-linux-x86_64 ~/.local/bin/hyprmuse
+install -D -m 755 hyprmuse-linux-x86_64 ~/.local/bin/hyprmuse
 ```
 
 Or run it from a checkout with `uv sync`, then `uv run hyprmuse` in place of `hyprmuse`

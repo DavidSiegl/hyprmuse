@@ -4,9 +4,7 @@ The import is absolute because packaging/build-binary.sh hands this file to PyIn
 as a plain script, outside the package, where a relative import has no parent.
 """
 
-import sys
-
 from hyprmuse.cli import main
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
