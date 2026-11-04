@@ -13,8 +13,9 @@ It reads only what each distribution ships: the C libraries linked into the
 interpreter and into lxml carry no license files there, so their notices are not
 included (TODO.md, "The binary's notices leave out its C libraries").
 
-Exits 1, naming each, when a bundled distribution ships no license file, so that a
-new dependency cannot reach a release without its notice.
+Exits 1, naming each, when a bundled component has no license file to reproduce, so
+that neither a new dependency nor a Python or PyInstaller that moved its license can
+reach a release without its notice.
 """
 
 import platform
@@ -22,7 +23,12 @@ import re
 import sys
 import sysconfig
 from collections.abc import Iterable
-from importlib.metadata import Distribution, distribution, packages_distributions
+from importlib.metadata import (
+    Distribution,
+    PackagePath,
+    distribution,
+    packages_distributions,
+)
 from pathlib import Path
 
 RULE = "=" * 79
@@ -53,7 +59,7 @@ def license_texts(dist: Distribution) -> list[tuple[str, str]]:
     for older wheels, one directly in a dist-info whose name starts with LICENSE,
     LICENCE, COPYING or NOTICE. That includes the dist-infos a distribution vendors
     inside its own package. The path is as RECORD gives it, relative to
-    site-packages.
+    site-packages. Raises ValueError, naming the file, for one that is not UTF-8.
     """
     prefixes = ("LICENSE", "LICENCE", "COPYING", "NOTICE")
     texts = []
@@ -66,8 +72,27 @@ def license_texts(dist: Distribution) -> list[tuple[str, str]]:
         in_licenses = len(rest) > 1 and rest[0] == "licenses"
         at_top = len(rest) == 1 and rest[0].upper().startswith(prefixes)
         if in_licenses or at_top:
-            texts.append((str(path), path.read_text(encoding="utf-8")))
+            texts.append((str(path), read_utf8(path)))
     return texts
+
+
+def python_license_texts() -> list[tuple[str, str]]:
+    """Return [("LICENSE.txt", text)] for the running Python, or [] when it has none.
+
+    A distribution's Python may leave the file out of its standard library directory
+    (Debian does); uv's managed builds keep it. Raises ValueError for one that is not
+    UTF-8.
+    """
+    path = Path(sysconfig.get_path("stdlib"), "LICENSE.txt")
+    return [(path.name, read_utf8(path))] if path.is_file() else []
+
+
+def read_utf8(path: Path | PackagePath) -> str:
+    """Return the text of ``path``; raise ValueError naming it when it is not UTF-8."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as err:
+        raise ValueError(f"{path} is not UTF-8: {err}") from err
 
 
 def section(title: str, texts: list[tuple[str, str]]) -> str:
@@ -78,29 +103,26 @@ def section(title: str, texts: list[tuple[str, str]]) -> str:
 
 def main() -> int:
     """Print the notices for the listing on stdin to stdout; return the exit status."""
-    python = Path(sysconfig.get_path("stdlib"), "LICENSE.txt")
-    sections = [
-        section(f"Python {platform.python_version()}",
-                [(python.name, python.read_text(encoding="utf-8"))]),
-        section("PyInstaller bootloader (GPL-2.0-or-later WITH Bootloader-exception)",
-                license_texts(distribution("pyinstaller"))),
+    # (title, license files) per component, in the order the notices list them.
+    components = [
+        (f"Python {platform.python_version()}", python_license_texts()),
+        ("PyInstaller bootloader (GPL-2.0-or-later WITH Bootloader-exception)",
+         license_texts(distribution("pyinstaller"))),
     ]
-    missing = []
     for dist in bundled_distributions(sys.stdin):
-        name = dist.metadata["Name"]
-        licensed = dist.metadata.get("License-Expression") or dist.metadata.get("License")
-        texts = license_texts(dist)
-        if not texts:
-            missing.append(name)
-        title = f"{name} {dist.version}" + (f" ({licensed})" if licensed else "")
-        sections.append(section(title, texts))
+        # Only the SPDX field: the older License field often holds a whole license text.
+        expression = dist.metadata.get("License-Expression")
+        title = f"{dist.metadata['Name']} {dist.version}"
+        components.append((f"{title} ({expression})" if expression else title,
+                           license_texts(dist)))
+    missing = [title for title, texts in components if not texts]
     if missing:
-        print(f"third_party_notices.py: no license file in {', '.join(missing)}",
+        print(f"third_party_notices.py: no license file for {'; '.join(missing)}",
               file=sys.stderr)
         return 1
     print("The hyprmuse binary bundles the following third-party software, each under its",
           "own license, reproduced below.\n", sep="\n")
-    print("\n".join(sections), end="")
+    print("\n".join(section(title, texts) for title, texts in components), end="")
     return 0
 
 
