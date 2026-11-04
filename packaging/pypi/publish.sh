@@ -20,6 +20,11 @@
 # gives other files, or uv publish fails. Needs bash, curl, git, tar and uv.
 set -euo pipefail
 
+# Held back from the environment until uv publish, so that uv build, the build backend it fetches
+# and any build hook in the tag's pyproject.toml never see it.
+token=${UV_PUBLISH_TOKEN-}
+unset UV_PUBLISH_TOKEN
+
 repo_url=https://github.com/DavidSiegl/hyprmuse
 export UV_PUBLISH_URL=${UV_PUBLISH_URL:-https://upload.pypi.org/legacy/}
 export UV_PUBLISH_CHECK_URL=${UV_PUBLISH_CHECK_URL:-https://pypi.org/simple/}
@@ -65,5 +70,5 @@ built=$(cd "$work/dist" && LC_ALL=C ls)
 want=$(printf '%s\n' "$wheel" "$sdist")
 [ "$built" = "$want" ] || { echo "$0: building $tag gave $(echo "$built" | tr '\n' ' '), not $(echo "$want" | tr '\n' ' ')" >&2; exit 1; }
 
-uv publish "$work/dist"/* || { echo "$0: uv publish failed for $tag" >&2; exit 1; }
+UV_PUBLISH_TOKEN=$token uv publish "$work/dist"/* || { echo "$0: uv publish failed for $tag" >&2; exit 1; }
 echo "the index has $tag"
