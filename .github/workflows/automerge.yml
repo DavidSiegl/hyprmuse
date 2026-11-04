@@ -2,11 +2,12 @@
 # on its head commit, so a pull request lands without a human. It merges only a pull
 # request whose every file is one the gate judges rather than one that configures it:
 # Python under hyprmuse/ or tests/, and Markdown at the root or under docs/; never a
-# conftest.py, nor a symlink or submodule, which git diffs as its target's path or a
-# commit id, so the gate never sees the code behind it. Anything else waits for a human,
-# since CI judged the pull request by its own copy of it: CI's files, pytest's,
-# coverage's and ruff's configuration wherever it sits, uv.lock, a .gitattributes that
-# hides lines from git diff, and any file named later.
+# conftest.py, nor a name holding a control character (a tab or a newline splits the
+# lists the checks below compare), nor a symlink or submodule, which git diffs as its
+# target's path or a commit id, so the gate never sees the code behind it. Anything else
+# waits for a human, since CI judged the pull request by its own copy of it: CI's files,
+# pytest's, coverage's and ruff's configuration wherever it sits, uv.lock, a
+# .gitattributes that hides lines from git diff, and any file named later.
 # Also held: drafts; pull requests labelled no-automerge, from forks or into another
 # branch; and one whose files or head tree cannot all be listed.
 #
@@ -71,7 +72,7 @@ jobs:
             if ! paths=$(gh api --paginate "repos/$GH_REPO/pulls/$pr/files" \
               --jq '.[] | .filename, (.previous_filename // empty)') || ((changed >= 3000)); then
               echo "#$pr: could not list all its files; held for a human"
-            elif grep -vqE '^(hyprmuse|tests)/.*\.py$|^(docs/.*)?[^/]*\.md$' <<<"$paths" ||
+            elif grep -vqE '^(hyprmuse|tests)/[^[:cntrl:]]*\.py$|^(docs/[^[:cntrl:]]*)?[^/[:cntrl:]]*\.md$' <<<"$paths" ||
               grep -qE '(^|/)conftest\.py$' <<<"$paths"; then
               echo "#$pr: changes files outside what auto-merge lands; held for a human"
             # The files endpoint has no mode, so the head commit's tree gives it: a listed path
@@ -79,7 +80,9 @@ jobs:
             # from the tree was deleted or renamed away. A truncated tree cannot be checked.
             elif ! modes=$(gh api "repos/$GH_REPO/git/trees/$SHA?recursive=1" \
               --jq 'if .truncated then error("tree truncated") else .tree[] | "\(.mode)\t\(.path)" end') ||
-              awk -F '\t' 'NR == FNR { listed[$0]; next } $2 in listed && $1 !~ /^100(644|755)$/ { found = 1 }
+              awk 'NR == FNR { listed[$0]; next }
+                { tab = index($0, "\t") }
+                substr($0, tab + 1) in listed && substr($0, 1, tab - 1) !~ /^100(644|755)$/ { found = 1 }
                 END { exit !found }' <(printf '%s\n' "$paths") - <<<"$modes"; then
               echo "#$pr: has a symlink or submodule, or its tree could not be read; held for a human"
             elif ! gh pr merge "$pr" --merge --match-head-commit "$SHA"; then
