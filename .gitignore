@@ -3,3 +3,12 @@ __pycache__/
 *.pyc
 # leftover scraped output; the library lives in ~/.local/share/hyprmuse/
 lyrics.json
+
+# The tracker's specs, tickets and review records (docs/agents/issue-tracker.md)
+.scratch/
+
+# What scripts/gate writes
+.coverage
+coverage.xml
+test-results.xml
+quality.md
