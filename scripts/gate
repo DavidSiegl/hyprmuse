@@ -4,17 +4,20 @@
 #
 #   scripts/gate [BASE]     BASE is any git revision; default main.
 #
-# The rules are BASE's pyproject.toml, so a change cannot loosen the rules it is judged
-# by; the tree's own only when BASE has no pyproject.toml. What each check means is in
+# gate.py's rules are BASE's pyproject.toml, so a change cannot loosen them; the tree's own
+# only when BASE has no pyproject.toml. pytest's and coverage's options and the tool
+# versions in uv.lock are still the tree's, which is why auto-merge (where set up) holds a
+# change to pyproject.toml or uv.lock. What each check means is in
 # https://github.com/DavidSiegl/octoflow-ai/blob/main/docs/quality-gate.md
 #
-# Exit status is gate.py's: 0 for GATE: OK, 1 for GATE: ERROR, 2 when it could not
-# judge the change, which includes this script failing before gate.py runs (no download,
-# a hash mismatch, pytest unable to run the tests). A failing test does not stop the
-# run; the gate reports it.
+# Exit status: 0 for GATE: OK, 1 for GATE: ERROR (quality.md says why), 2 when the change
+# could not be judged: this script failing before gate.py runs (no download, a hash
+# mismatch, pytest unable to run the tests, BASE not a commit), or gate.py failing without
+# writing a verdict. A failing test does not stop the run; the gate reports it.
 #
-# gate.py is downloaded once per pinned commit into $XDG_CACHE_HOME/octoflow-gate/
-# and refused unless its SHA-256 matches. To move to a newer gate, change both pins.
+# gate.py is downloaded once per pinned commit into $XDG_CACHE_HOME/octoflow-gate/, and
+# every run executes a copy of it checked against the pinned SHA-256, since the tests run
+# before it as the user who owns that cache. To move to a newer gate, change both pins.
 set -euo pipefail
 # Any failure before gate.py runs is "could not judge", whatever the command's status.
 trap 'exit 2' ERR
@@ -24,31 +27,28 @@ gate_sha256=2165e8f2217f473974a21f1c5538aa6887d1df56fbabfa11319226dfbfa180a3
 
 base=${1:-main}
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/octoflow-gate/$gate_commit"
-gate="$cache/gate.py"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-if [[ ! -f $gate ]]; then
+if [[ ! -f $cache/gate.py ]]; then
 	mkdir -p "$cache"
-	curl -fsSL "https://raw.githubusercontent.com/DavidSiegl/octoflow-ai/$gate_commit/gate.py" -o "$work/gate.py"
-	if ! echo "$gate_sha256  $work/gate.py" | sha256sum --check --status; then
-		echo "gate: downloaded gate.py does not match the pinned SHA-256" >&2
-		exit 2
-	fi
-	mv "$work/gate.py" "$gate"
+	# Downloaded beside its final name, so the rename is atomic and a concurrent run never
+	# finds a partial file.
+	tmp=$(mktemp "$cache/gate.py.XXXXXX")
+	curl -fsSL "https://raw.githubusercontent.com/DavidSiegl/octoflow-ai/$gate_commit/gate.py" -o "$tmp"
+	mv "$tmp" "$cache/gate.py"
 fi
 
 top=$(git rev-parse --show-toplevel)
 cd "$top"
-rules=()
-if git cat-file -e "$base:pyproject.toml" 2>/dev/null; then
-	git show "$base:pyproject.toml" >"$work/pyproject.toml"
-	rules=(--config "$work/pyproject.toml")
+if ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+	echo "gate: $base is not a commit" >&2
+	exit 2
 fi
 
 # The reports are gitignored and outlive a run: remove them so a pytest that writes none
-# cannot leave gate.py the last run's.
-rm -f test-results.xml coverage.xml
+# cannot leave gate.py the last run's, nor a crashed gate.py the last verdict.
+rm -f test-results.xml coverage.xml quality.md
 # pytest exits 1 when tests failed, which the gate judges; anything else means the tests
 # did not run (https://docs.pytest.org/en/stable/reference/exit-codes.html).
 status=0
@@ -57,5 +57,26 @@ if ((status > 1)); then
 	echo "gate: pytest exited $status, so the tests did not run" >&2
 	exit 2
 fi
+
+# The judge and its rules are fixed only now, after the tests ran.
+cp "$cache/gate.py" "$work/gate.py"
+if ! echo "$gate_sha256  $work/gate.py" | sha256sum --check --status; then
+	echo "gate: $cache/gate.py does not match the pinned SHA-256; delete it to download it again" >&2
+	exit 2
+fi
+rules=()
+if git cat-file -e "$base:pyproject.toml" 2>/dev/null; then
+	git show "$base:pyproject.toml" >"$work/pyproject.toml"
+	rules=(--config "$work/pyproject.toml")
+fi
+
 trap - ERR
-uv run python "$gate" --base "$base" "${rules[@]}" --tests test-results.xml --coverage coverage.xml --out quality.md
+status=0
+uv run python "$work/gate.py" --base "$base" "${rules[@]}" --tests test-results.xml --coverage coverage.xml \
+	--out quality.md || status=$?
+# gate.py exits 1 for GATE: ERROR, but so does Python on an uncaught exception.
+if ((status == 1)) && [[ $(head -n 1 quality.md 2>/dev/null) != "GATE: ERROR" ]]; then
+	echo "gate: gate.py exited 1 without writing a verdict" >&2
+	exit 2
+fi
+exit "$status"

@@ -2,7 +2,9 @@
 # on its head commit, so a pull request lands without a human. Held for a human instead:
 # drafts; pull requests labelled no-automerge; pull requests from forks or into another
 # branch; and pull requests that change what judges them, since CI ran the pull
-# request's own copy of those: .github/, scripts/gate, Jenkinsfile.
+# request's own copy of those: .github/, scripts/gate, Jenkinsfile, and pyproject.toml
+# and uv.lock, which set pytest's and coverage's options and the tool versions the gate
+# runs. A pull request whose files cannot all be listed is held too.
 #
 # GitHub runs this from main's copy for status events, so a pull request cannot change
 # these rules for itself. It trusts a success only from Jenkins's GitHub App
@@ -27,30 +29,44 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    concurrency:
-      group: automerge-${{ github.repository }}
-      cancel-in-progress: false
+    # No concurrency group: one would cancel a queued run when a third arrives, leaving a
+    # passed pull request unmerged. gh pr merge --match-head-commit makes parallel runs safe.
     steps:
-      - env:
+      - shell: bash
+        env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           SHA: ${{ github.event.sha }}
         run: |
+          # Fails the run when a pull request that should have merged did not, after trying the rest.
+          failed=0
           # Every open pull request whose head is the commit that passed.
           for pr in $(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '.[] | select(.state == "open") | .number'); do
-            IFS=$'\t' read -r head branch base draft fork held <<<"$(gh pr view "$pr" \
-              --json headRefOid,headRefName,baseRefName,isDraft,isCrossRepository,labels \
+            IFS=$'\t' read -r head branch base draft fork held changed <<<"$(gh pr view "$pr" \
+              --json headRefOid,headRefName,baseRefName,isDraft,isCrossRepository,labels,changedFiles \
               --jq '[.headRefOid, .headRefName, .baseRefName, .isDraft, .isCrossRepository,
-                     any(.labels[]; .name == "no-automerge")] | @tsv')"
+                     any(.labels[]; .name == "no-automerge"), .changedFiles] | @tsv')"
             if [ "$head" != "$SHA" ]; then
               echo "#$pr: its head moved on from $SHA; that commit's own check decides"
+              continue
             elif [ "$base" != main ] || [ "$draft" = true ] || [ "$fork" = true ] || [ "$held" = true ]; then
               echo "#$pr: held (base $base, draft $draft, fork $fork, no-automerge $held)"
-            elif gh pr diff "$pr" --name-only | grep -qE '^(\.github/|scripts/gate$)|^Jenkinsfile$'; then
+              continue
+            fi
+            # Both sides of a rename: moving a file out of .github/ changes .github/ too. The
+            # files endpoint lists at most 3000 files, so a larger pull request is held.
+            if ! paths=$(gh api --paginate "repos/$GH_REPO/pulls/$pr/files" \
+              --jq '.[] | .filename, (.previous_filename // empty)') || ((changed >= 3000)); then
+              echo "#$pr: could not list all its files; held for a human"
+            elif grep -qE '^(\.github/|scripts/gate$|pyproject\.toml$|uv\.lock$)|^Jenkinsfile$' <<<"$paths"; then
               echo "#$pr: changes what judges it; held for a human"
+            elif ! gh pr merge "$pr" --merge --match-head-commit "$SHA"; then
+              echo "::error::#$pr: merge failed"
+              failed=1
             else
-              gh pr merge "$pr" --merge --match-head-commit "$SHA"
-              gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$branch"
               echo "#$pr: merged"
+              gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$branch" ||
+                echo "::warning::#$pr: merged, but its branch $branch was not deleted"
             fi
           done
+          exit "$failed"
