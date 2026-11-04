@@ -19,14 +19,16 @@ class SourceError(RuntimeError):
 
 @dataclass
 class Candidate:
-    """A subject a source could harvest, before any harvesting happens."""
+    """A search hit: a subject a source could harvest, shown to the user to pick.
+
+    Only ``source`` and ``source_id`` matter once one is chosen; the rest is for
+    display, since ``Source.fetch`` needs nothing but the id.
+    """
 
     source: str
     source_id: str
     name: str
     domain: str
-    lang: str = "en"
-    url: str = ""
     hint: str = ""  # shown to the user when disambiguating
 
 
@@ -60,12 +62,35 @@ class Subject:
 
 
 class Source(Protocol):
+    """A provider of quotable subjects, registered in ``sources.REGISTRY``.
+
+    ``name`` is the registry key and the ``source`` of everything it returns;
+    ``domain`` is the kind of text it yields; ``produces_atomic`` says whether
+    its items are quoted whole or sliced.
+    """
+
     name: str
     domain: str
     produces_atomic: bool
 
-    def search(self, query: str, lang: str) -> list[Candidate]: ...
-    def fetch(self, cand: Candidate, progress=None) -> Subject: ...
+    def search(self, query: str, lang: str) -> list[Candidate]:
+        """Subjects matching ``query``, best first; [] when nothing matches.
+
+        ``lang`` is a language edition code, honoured only by sources that
+        have editions. Raises SourceError when the provider is unreachable.
+        """
+        ...
+
+    def fetch(self, source_id: str, progress=None) -> Subject:
+        """Harvest the subject ``source_id`` names, from scratch.
+
+        ``source_id`` is a ``Candidate.source_id`` from this source, or the
+        ``source_id`` of a Subject it harvested earlier: the same id always
+        re-harvests the same subject with the same name and attribution.
+        ``progress``, if given, is called with one-line status messages.
+        Raises SourceError when the provider fails or yields nothing usable.
+        """
+        ...
 
 
 _LAST_CALL: dict[str, float] = {}

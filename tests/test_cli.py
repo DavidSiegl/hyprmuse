@@ -123,3 +123,38 @@ def test_help_exits_cleanly():
     with pytest.raises(SystemExit) as exc:
         cli.main(["--help"])
     assert exc.value.code == 0
+
+
+EBOOK = """The Project Gutenberg eBook of Die Verwandlung
+
+Title: Die Verwandlung
+
+Author: Franz Kafka
+
+Language: German
+
+*** START OF THE PROJECT GUTENBERG EBOOK DIE VERWANDLUNG ***
+
+Als Gregor Samsa eines Morgens aus unruhigen Träumen erwachte, fand er sich
+in seinem Bett zu einem ungeheueren Ungeziefer verwandelt.
+
+*** END OF THE PROJECT GUTENBERG EBOOK DIE VERWANDLUNG ***
+"""
+
+
+def test_update_keeps_a_gutenberg_book_title_as_the_work(capsys, monkeypatch,
+                                                         fake_response):
+    """Regression: update rebuilt the search hit from the stored subject and
+    gutenberg.fetch read the author from it as the work, so every quote was
+    attributed "— Franz Kafka: Franz Kafka"."""
+    from hyprmuse.sources import gutenberg
+    monkeypatch.setattr(gutenberg, "get", lambda *a, **k: fake_response(text=EBOOK))
+    library.save(make_subject(source="gutenberg", source_id="22367",
+                              name="Franz Kafka", domain="prose", items=[
+                                  Item(lines=["old"], work="Die Verwandlung",
+                                       atomic=True)]))
+    code, _ = run(["update", "gutenberg:22367"], capsys)
+    (subject,) = library.load_all()
+    assert code == 0
+    assert subject.name == "Franz Kafka"
+    assert {i.work for i in subject.items} == {"Die Verwandlung"}

@@ -73,7 +73,7 @@ def cmd_add(args) -> int:
         return _err(f"no match chosen for {args.query!r}")
     print(f"Harvesting {cand.name} from {cand.source}…", file=sys.stderr)
     try:
-        subject = get_source(cand.source).fetch(cand, _progress)
+        subject = get_source(cand.source).fetch(cand.source_id, _progress)
     except SourceError as exc:
         return _err(str(exc))
     path = library.save(subject)
@@ -116,12 +116,9 @@ def cmd_update(args) -> int:
         return _err("nothing to update")
     failed = 0
     for subj in targets:
-        cand = Candidate(source=subj.source, source_id=subj.source_id,
-                         name=subj.name, domain=subj.domain, lang=subj.lang,
-                         url=subj.url)
         print(f"Updating {subj.name} ({subj.source})…", file=sys.stderr)
         try:
-            fresh = get_source(subj.source).fetch(cand, _progress)
+            fresh = get_source(subj.source).fetch(subj.source_id, _progress)
         except SourceError as exc:
             print(f"  failed: {exc}", file=sys.stderr)
             failed += 1
