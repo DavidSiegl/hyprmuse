@@ -2,13 +2,13 @@
 # on its head commit, so a pull request lands without a human. It merges only a pull
 # request whose every file is one the gate judges rather than one that configures it:
 # Python under hyprmuse/ or tests/, and Markdown at the root or under docs/; never a
-# conftest.py, nor a symlink or submodule, which git diffs as the one line naming its
-# target, so the gate never sees the code behind it. Anything else waits for a human,
+# conftest.py, nor a symlink or submodule, which git diffs as its target's path or a
+# commit id, so the gate never sees the code behind it. Anything else waits for a human,
 # since CI judged the pull request by its own copy of it: CI's files, pytest's,
 # coverage's and ruff's configuration wherever it sits, uv.lock, a .gitattributes that
 # hides lines from git diff, and any file named later.
 # Also held: drafts; pull requests labelled no-automerge, from forks or into another
-# branch; and one whose files cannot all be listed or whose diff cannot be read.
+# branch; and one whose files or head tree cannot all be listed.
 #
 # GitHub runs this from main's copy for status events, so a pull request cannot change
 # these rules for itself. It trusts a success only from Jenkins's GitHub App
@@ -74,9 +74,14 @@ jobs:
             elif grep -vqE '^(hyprmuse|tests)/.*\.py$|^(docs/.*)?[^/]*\.md$' <<<"$paths" ||
               grep -qE '(^|/)conftest\.py$' <<<"$paths"; then
               echo "#$pr: changes files outside what auto-merge lands; held for a human"
-            # The files endpoint has no file mode, so the diff is read for one.
-            elif ! patch=$(gh pr diff "$pr") || grep -qE '^new (file )?mode 1[26]0000$' <<<"$patch"; then
-              echo "#$pr: adds a symlink or submodule, or its diff could not be read; held for a human"
+            # The files endpoint has no mode, so the head commit's tree gives it: a listed path
+            # held there as anything but a regular file is a symlink or submodule. A path absent
+            # from the tree was deleted or renamed away. A truncated tree cannot be checked.
+            elif ! modes=$(gh api "repos/$GH_REPO/git/trees/$SHA?recursive=1" \
+              --jq 'if .truncated then error("tree truncated") else .tree[] | "\(.mode)\t\(.path)" end') ||
+              awk -F '\t' 'NR == FNR { listed[$0]; next } $2 in listed && $1 !~ /^100(644|755)$/ { found = 1 }
+                END { exit !found }' <(printf '%s\n' "$paths") - <<<"$modes"; then
+              echo "#$pr: has a symlink or submodule, or its tree could not be read; held for a human"
             elif ! gh pr merge "$pr" --merge --match-head-commit "$SHA"; then
               echo "::error::#$pr: merge failed"
               failed=1
