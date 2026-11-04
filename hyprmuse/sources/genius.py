@@ -135,13 +135,17 @@ class Genius:
                     source_id=str(res["id"]),
                     name=res.get("name", query),
                     domain=self.domain,
-                    lang=lang,
-                    url=res.get("url", ""),
                     hint="artist",
                 ))
         return hits
 
-    def _songs(self, artist_id: str, progress=None) -> list[dict]:
+    def _songs(self, artist_id: str, progress=None) -> tuple[dict, list[dict]]:
+        """The artist's own record and their songs, most popular first.
+
+        The artist record ({"name", "url"}) is read off the songs, so it is
+        empty when the artist is not the primary artist of any song.
+        """
+        artist: dict = {}
         songs, page = [], 1
         while page:
             if progress:
@@ -152,12 +156,15 @@ class Genius:
             body = resp.json().get("response", {})
             for song in body.get("songs", []):
                 # Skip entries where this artist is only a featured guest.
-                if song.get("primary_artist", {}).get("id") and \
-                        str(song["primary_artist"]["id"]) != str(artist_id):
+                primary = song.get("primary_artist", {})
+                if primary.get("id") and str(primary["id"]) != str(artist_id):
                     continue
+                if primary.get("id") and not artist:
+                    artist = {"name": primary.get("name", ""),
+                              "url": primary.get("url", "")}
                 songs.append({"title": song["title"], "url": song["url"]})
             page = body.get("next_page")
-        return songs
+        return artist, songs
 
     def _lyrics(self, url: str) -> str | None:
         try:
@@ -166,14 +173,16 @@ class Genius:
             return None
         return lyrics_text(resp.text)
 
-    def fetch(self, cand: Candidate, progress=None) -> Subject:
+    def fetch(self, source_id: str, progress=None) -> Subject:
+        artist, songs = self._songs(source_id, progress)
+        name = artist.get("name") or f"Genius artist {source_id}"
+        url = artist.get("url", "")
         subject = Subject(
-            source=self.name, source_id=cand.source_id, name=cand.name,
-            domain=self.domain, lang=cand.lang, url=cand.url,
-            attribution={"provider": "Genius", "url": cand.url,
+            source=self.name, source_id=source_id, name=name,
+            domain=self.domain, url=url,
+            attribution={"provider": "Genius", "url": url,
                          "note": "Lyrics scraped for personal offline use."},
         )
-        songs = self._songs(cand.source_id, progress)
         for idx, song in enumerate(songs, 1):
             if progress:
                 progress(f"[{idx}/{len(songs)}] {song['title']}")
@@ -185,7 +194,7 @@ class Genius:
                                               url=song["url"], atomic=False))
             time.sleep(random.uniform(1.0, 2.5))
         if not subject.items:
-            raise SourceError(f"no lyrics harvested for {cand.name}")
+            raise SourceError(f"no lyrics harvested for {name}")
         return subject
 
 

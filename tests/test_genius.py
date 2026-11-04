@@ -129,3 +129,25 @@ def test_lyrics_text_keeps_annotated_lines_whole():
 
 def test_lyrics_text_without_a_container_is_none():
     assert genius.lyrics_text("<html><body>no lyrics here</body></html>") is None
+
+
+def test_fetch_names_the_subject_from_the_artists_own_songs(monkeypatch,
+                                                            fake_response):
+    """fetch gets only the id, so the name must come from Genius itself."""
+    songs = {"response": {"next_page": None, "songs": [
+        {"title": "Guest Spot", "url": "https://genius.com/guest",
+         "primary_artist": {"id": 99, "name": "Someone Else", "url": "x"}},
+        {"title": "Delmenhorst", "url": "https://genius.com/delmenhorst",
+         "primary_artist": {"id": 7, "name": "Element of Crime",
+                            "url": "https://genius.com/artists/eoc"}},
+    ]}}
+
+    def get(url, **_):
+        return fake_response(songs) if "/songs" in url else fake_response(text=PAGE)
+
+    monkeypatch.setattr(genius, "get", get)
+    monkeypatch.setattr(genius.time, "sleep", lambda _: None)
+    subject = genius.SOURCE.fetch("7")
+    assert subject.name == "Element of Crime"
+    assert subject.url == "https://genius.com/artists/eoc"
+    assert [i.work for i in subject.items] == ["Delmenhorst"]

@@ -1,6 +1,6 @@
-"""Passage extraction from a Gutenberg plaintext body."""
+"""Passage and header extraction from a Gutenberg plaintext."""
 
-from hyprmuse.sources.gutenberg import extract_passages
+from hyprmuse.sources.gutenberg import extract_passages, read_header
 
 BOOK = """
 The Project Gutenberg eBook of Something
@@ -69,3 +69,15 @@ def test_dangling_quote_is_rejected():
             'He said "this sentence has only one quotation mark in it and so '
             'should be dropped by the extractor.\n')
     assert extract_passages(text) == []
+
+
+def test_header_fields_come_from_the_preamble_only():
+    text = ("Title: Die Verwandlung\n\nAuthor: Franz Kafka\nLanguage: German\n\n"
+            "*** START OF THE PROJECT GUTENBERG EBOOK X ***\n\n"
+            "Title: a line inside the book that only looks like a field\n")
+    assert read_header(text) == {"title": "Die Verwandlung",
+                                 "author": "Franz Kafka", "language": "German"}
+
+
+def test_header_without_fields_is_empty():
+    assert read_header(BOOK) == {}

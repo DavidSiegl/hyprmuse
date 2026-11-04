@@ -108,14 +108,14 @@ class Wikiquote:
             title = hit["title"]
             out.append(Candidate(
                 source=self.name, source_id=f"{lang}:{title}", name=title,
-                domain=self.domain, lang=lang,
-                url=f"https://{lang}.wikiquote.org/wiki/{title.replace(' ', '_')}",
-                hint=f"{hit.get('wordcount', 0)} words",
+                domain=self.domain, hint=f"{hit.get('wordcount', 0)} words",
             ))
         return out
 
-    def fetch(self, cand: Candidate, progress=None) -> Subject:
-        lang, _, title = cand.source_id.partition(":")
+    def fetch(self, source_id: str, progress=None) -> Subject:
+        # The id is "<edition>:<page title>", so it carries the language too.
+        lang, _, title = source_id.partition(":")
+        url = f"https://{lang}.wikiquote.org/wiki/{title.replace(' ', '_')}"
         if progress:
             progress(f"parsing {title} ({lang}.wikiquote.org)")
         resp = get(self._api(lang), params={
@@ -128,9 +128,9 @@ class Wikiquote:
         if not items:
             raise SourceError(f"no quotes parsed from {title}")
         return Subject(
-            source=self.name, source_id=cand.source_id, name=title,
-            domain=self.domain, lang=lang, url=cand.url, items=items,
-            attribution={"provider": "Wikiquote", "url": cand.url,
+            source=self.name, source_id=source_id, name=title,
+            domain=self.domain, lang=lang, url=url, items=items,
+            attribution={"provider": "Wikiquote", "url": url,
                          "license": "CC BY-SA 4.0"},
         )
 

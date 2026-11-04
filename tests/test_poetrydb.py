@@ -3,7 +3,7 @@
 import pytest
 
 from hyprmuse.sources import poetrydb
-from hyprmuse.sources.base import Candidate, SourceError
+from hyprmuse.sources.base import SourceError
 
 AUTHORS = {"authors": ["Emily Dickinson", "Walt Whitman", "William Blake"]}
 POEMS = [
@@ -34,9 +34,7 @@ def test_search_returns_nothing_for_a_miss(monkeypatch, fake_response):
 def test_fetch_builds_sliceable_items_and_keeps_one_stanza_break(
         monkeypatch, fake_response):
     monkeypatch.setattr(poetrydb, "get", lambda *a, **k: fake_response(POEMS))
-    cand = Candidate(source="poetrydb", source_id="Emily Dickinson",
-                     name="Emily Dickinson", domain="poetry")
-    subject = poetrydb.SOURCE.fetch(cand)
+    subject = poetrydb.SOURCE.fetch("Emily Dickinson")
     assert len(subject.items) == 1              # the empty poem is dropped
     assert subject.items[0].atomic is False     # poems are sliceable
     assert subject.items[0].lines == ["a line", "another line", "", "a third line"]
@@ -47,7 +45,5 @@ def test_fetch_builds_sliceable_items_and_keeps_one_stanza_break(
 def test_fetch_raises_when_api_reports_a_miss(monkeypatch, fake_response):
     monkeypatch.setattr(poetrydb, "get",
                         lambda *a, **k: fake_response({"status": 404}))
-    cand = Candidate(source="poetrydb", source_id="Nobody", name="Nobody",
-                     domain="poetry")
     with pytest.raises(SourceError):
-        poetrydb.SOURCE.fetch(cand)
+        poetrydb.SOURCE.fetch("Nobody")

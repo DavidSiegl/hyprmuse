@@ -23,6 +23,26 @@ _SENTENCE = re.compile(r"(?<=[.!?])\s+")
 _ALLCAPS = re.compile(r"^[^a-z]{8,}$")
 
 
+_HEADER_FIELD = re.compile(r"^(Title|Author|Language):[ \t]*(.+?)\s*$", re.MULTILINE)
+
+# Gutenberg names languages in English; only the common ones get a code; the
+# rest are stored as "en", which only affects what `hyprmuse list` shows.
+_LANG_CODES = {"English": "en", "German": "de", "French": "fr", "Spanish": "es",
+               "Italian": "it", "Dutch": "nl", "Portuguese": "pt"}
+
+
+def read_header(text: str) -> dict[str, str]:
+    """The ebook's catalogue fields from its plaintext preamble.
+
+    Returns lower-cased keys "title", "author" and "language", each present
+    only if the preamble before the START banner names it. A field continued
+    on further lines (a long title) keeps only its first line.
+    """
+    if m := _START.search(text):
+        text = text[:m.start()]
+    return {k.lower(): v for k, v in _HEADER_FIELD.findall(text)}
+
+
 def extract_passages(text: str, limit: int = MAX_PASSAGES) -> list[str]:
     """Strip the Gutenberg licence wrapper, then sample readable sentences."""
     if m := _START.search(text):
@@ -74,24 +94,26 @@ class Gutenberg:
             out.append(Candidate(
                 source=self.name, source_id=m.group(1),
                 name=(title.get_text(strip=True) if title else query),
-                domain=self.domain, lang=lang,
-                url=f"{BASE}/ebooks/{m.group(1)}",
+                domain=self.domain,
                 hint=author.get_text(strip=True) if author else "",
             ))
             if len(out) >= 8:
                 break
         return out
 
-    def fetch(self, cand: Candidate, progress=None) -> Subject:
+    def fetch(self, source_id: str, progress=None) -> Subject:
+        # The subject is the author and each passage's work is the book, both
+        # read from the ebook's own header so a re-harvest needs only the id.
+        book_id = source_id
+        url = f"{BASE}/ebooks/{book_id}"
         if progress:
-            progress(f"downloading ebook {cand.source_id}")
-        book_id = cand.source_id
+            progress(f"downloading ebook {book_id}")
         last_err = None
-        for url in (f"{BASE}/cache/epub/{book_id}/pg{book_id}.txt",
-                    f"{BASE}/files/{book_id}/{book_id}-0.txt",
-                    f"{BASE}/ebooks/{book_id}.txt.utf-8"):
+        for txt_url in (f"{BASE}/cache/epub/{book_id}/pg{book_id}.txt",
+                        f"{BASE}/files/{book_id}/{book_id}-0.txt",
+                        f"{BASE}/ebooks/{book_id}.txt.utf-8"):
             try:
-                resp = get(url, key="gutenberg", throttle=1.0)
+                resp = get(txt_url, key="gutenberg", throttle=1.0)
             except SourceError as exc:
                 last_err = exc
                 continue
@@ -101,13 +123,17 @@ class Gutenberg:
             passages = extract_passages(resp.text)
             if not passages:
                 continue
+            meta = read_header(resp.text)
+            title = meta.get("title", "")
             return Subject(
                 source=self.name, source_id=book_id,
-                name=cand.hint or cand.name, domain=self.domain, lang=cand.lang,
-                url=cand.url,
-                items=[Item(lines=[p], work=cand.name, url=cand.url, atomic=True)
+                name=meta.get("author") or title or f"Gutenberg ebook {book_id}",
+                domain=self.domain,
+                lang=_LANG_CODES.get(meta.get("language", ""), "en"),
+                url=url,
+                items=[Item(lines=[p], work=title, url=url, atomic=True)
                        for p in passages],
-                attribution={"provider": "Project Gutenberg", "url": cand.url,
+                attribution={"provider": "Project Gutenberg", "url": url,
                              "license": "public domain"},
             )
         raise SourceError(f"could not retrieve ebook {book_id}: {last_err}")

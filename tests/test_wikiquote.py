@@ -92,23 +92,19 @@ def test_english_about_heading_is_skipped():
 
 
 def test_fetch_raises_on_api_error(monkeypatch, fake_response):
-    from hyprmuse.sources.base import Candidate, SourceError
+    from hyprmuse.sources.base import SourceError
     monkeypatch.setattr(wq, "get", lambda *a, **k: fake_response(
         {"error": {"info": "page not found"}}))
-    cand = Candidate(source="wikiquote", source_id="en:Nobody", name="Nobody",
-                     domain="quotations")
     with pytest.raises(SourceError, match="page not found"):
-        wq.SOURCE.fetch(cand)
+        wq.SOURCE.fetch("en:Nobody")
 
 
 def test_fetch_builds_subject_with_licence(monkeypatch, fake_response):
-    from hyprmuse.sources.base import Candidate
     monkeypatch.setattr(wq, "get", lambda *a, **k: fake_response(
         {"parse": {"wikitext": {"*": WIKITEXT}}}))
-    cand = Candidate(source="wikiquote", source_id="de:Jemand", name="Jemand",
-                     domain="quotations", lang="de", url="http://example.org")
-    subject = wq.SOURCE.fetch(cand)
+    subject = wq.SOURCE.fetch("de:Jemand")
     assert subject.name == "Jemand"
     assert subject.lang == "de"
+    assert subject.url == "https://de.wikiquote.org/wiki/Jemand"
     assert len(subject.items) == 2
     assert subject.attribution["license"] == "CC BY-SA 4.0"

@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from . import config, library, render, select
+from . import config, library, lockscreen
 from .sources import AUTO_ORDER, REGISTRY, SourceError, get_source
 from .sources.base import Candidate
 
@@ -73,7 +73,7 @@ def cmd_add(args) -> int:
         return _err(f"no match chosen for {args.query!r}")
     print(f"Harvesting {cand.name} from {cand.source}…", file=sys.stderr)
     try:
-        subject = get_source(cand.source).fetch(cand, _progress)
+        subject = get_source(cand.source).fetch(cand.source_id, _progress)
     except SourceError as exc:
         return _err(str(exc))
     path = library.save(subject)
@@ -116,12 +116,9 @@ def cmd_update(args) -> int:
         return _err("nothing to update")
     failed = 0
     for subj in targets:
-        cand = Candidate(source=subj.source, source_id=subj.source_id,
-                         name=subj.name, domain=subj.domain, lang=subj.lang,
-                         url=subj.url)
         print(f"Updating {subj.name} ({subj.source})…", file=sys.stderr)
         try:
-            fresh = get_source(subj.source).fetch(cand, _progress)
+            fresh = get_source(subj.source).fetch(subj.source_id, _progress)
         except SourceError as exc:
             print(f"  failed: {exc}", file=sys.stderr)
             failed += 1
@@ -141,20 +138,17 @@ def cmd_sources(args) -> int:
 
 def cmd_quote(args) -> int:
     cfg = config.load_config()
-    num_lines = args.lines if args.lines is not None else cfg["lines"]
-    width = args.width if args.width is not None else cfg["width"]
-    max_lines = args.max_lines if args.max_lines is not None else cfg["max_lines"]
-    max_chars = args.max_chars if args.max_chars is not None else cfg["max_chars"]
-
-    fit = select.Fit(width=width, max_lines=max_lines, max_chars=max_chars)
-    chosen = select.pick(cfg, num_lines=num_lines, subject=args.subject,
-                         domain=args.domain, source=args.source, seed=args.seed,
-                         fit=fit)
-    if chosen is None:
+    for key, flag in (("lines", args.lines), ("width", args.width),
+                      ("max_lines", args.max_lines), ("max_chars", args.max_chars)):
+        if flag is not None:
+            cfg[key] = flag
+    text = lockscreen.quote(cfg, subject=args.subject, domain=args.domain,
+                            source=args.source, seed=args.seed,
+                            show_note=args.note)
+    if text is None:
         print("No quotes stored yet — run: hyprmuse add \"Franz Kafka\"")
         return 0
-    print(render.render(chosen, width=width, max_lines=max_lines,
-                        show_note=args.note))
+    print(text)
     return 0
 
 
