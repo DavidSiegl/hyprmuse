@@ -112,9 +112,11 @@ pipeline {
                             exit 1
                         fi
                         # Whatever packaging/build-binary.sh built for this agent's architecture,
-                        # which names it.
-                        set -- dist/hyprmuse-linux-*
-                        [ -f "$1" ] || { echo "no binary in dist/; run the whole build" >&2; exit 1; }
+                        # which names it, and the licenses of what that bundles.
+                        set -- dist/hyprmuse-linux-* dist/hyprmuse-third-party-licenses.txt
+                        for asset; do
+                            [ -f "$asset" ] || { echo "no $asset; run the whole build" >&2; exit 1; }
+                        done
                         gh release create "$tag" "$@" \
                             --target "$(git rev-parse HEAD)" --title "$tag" --generate-notes
                     '''

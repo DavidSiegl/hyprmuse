@@ -141,3 +141,9 @@ package's or the tests' Python, or Markdown, merges into `main` without a human.
 
 A merge into `main` that raises `version` in `pyproject.toml` releases it: Jenkins builds
 the binary with `packaging/build-binary.sh` and publishes it as release `v<version>`.
+
+## License
+
+MIT; see `LICENSE`. The release binary also bundles Python, the packages hyprmuse
+depends on, and the C libraries linked into them, each under its own license; each
+release carries their notices as `hyprmuse-third-party-licenses.txt`.
