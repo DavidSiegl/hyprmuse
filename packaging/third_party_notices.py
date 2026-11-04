@@ -5,23 +5,23 @@
 Reads the binary's archive listing on stdin and must run in the environment
 PyInstaller built it from, whose installed distributions it reads the license files
 of; packaging/build-binary.sh runs it so and writes what it prints beside the binary.
-The notices cover the Python interpreter, PyInstaller's bootloader, and every installed
-distribution other than hyprmuse that provides a top-level package or module the
-listing names, including the license files of what that distribution vendors.
+The notices cover:
 
-It reads only what each distribution ships: the C libraries linked into the
-interpreter and into lxml carry no license files there, so their notices are not
-included (TODO.md, "The binary's notices leave out its C libraries").
+- the Python interpreter and the C libraries linked into it, and the C libraries
+  linked into lxml, from packaging/licenses/ (NATIVE_NOTICES);
+- PyInstaller's bootloader;
+- every installed distribution other than hyprmuse that provides a top-level package
+  or module the listing names, including the license files of what it vendors.
 
 Exits 1, naming each, when a bundled component has no license file to reproduce, so
-that neither a new dependency nor a Python or PyInstaller that moved its license can
-reach a release without its notice.
+that a new dependency cannot reach a release without its notice; and when Python's
+minor version or lxml's version is not the one packaging/licenses/ was taken for
+(NOTICED_PYTHON, NOTICED_LXML), since another may link other C libraries.
 """
 
 import platform
 import re
 import sys
-import sysconfig
 from collections.abc import Iterable
 from importlib.metadata import (
     Distribution,
@@ -32,6 +32,35 @@ from importlib.metadata import (
 from pathlib import Path
 
 RULE = "=" * 79
+
+# The license texts of the code no distribution carries a license file for: what
+# python-build-standalone links into the interpreter, and what lxml's wheels link
+# statically. packaging/licenses/README.md says where each came from.
+NATIVE_LICENSES = Path(__file__).parent / "licenses"
+
+# The Python minor version and lxml version packaging/licenses/ was taken for.
+NOTICED_PYTHON = "3.14"
+NOTICED_LXML = "6.0.2"
+
+# (title, files in NATIVE_LICENSES) per component, in the order the notices list them.
+NATIVE_NOTICES = [
+    ("Python 3.14, and the software it incorporates", ["cpython.txt", "cpython-incorporated.rst"]),
+    ("OpenSSL 3, linked into Python", ["openssl.txt"]),
+    ("libffi, linked into Python", ["libffi.txt"]),
+    ("Expat, linked into Python", ["expat.txt"]),
+    ("SQLite, linked into Python", ["sqlite.txt"]),
+    ("bzip2, linked into Python", ["bzip2.txt"]),
+    ("liblzma (XZ Utils), linked into Python", ["liblzma.txt"]),
+    ("Zstandard, linked into Python", ["zstd.txt"]),
+    ("mpdecimal, linked into Python", ["mpdecimal.txt"]),
+    ("libuuid, linked into Python", ["libuuid.txt"]),
+    ("ncurses, linked into Python", ["ncurses.txt"]),
+    ("libedit, linked into Python", ["libedit.txt"]),
+    ("zlib, linked into Python and into lxml", ["zlib.txt"]),
+    ("libxml2, linked into lxml", ["libxml2.txt"]),
+    ("libxslt and libexslt, linked into lxml", ["libxslt.txt"]),
+    ("GNU libiconv, linked into lxml", ["libiconv.txt"]),
+]
 
 
 def bundled_distributions(listing: Iterable[str]) -> list[Distribution]:
@@ -61,30 +90,10 @@ def license_texts(dist: Distribution) -> list[tuple[str, str]]:
     inside its own package. The path is as RECORD gives it, relative to
     site-packages. Raises ValueError, naming the file, for one that is not UTF-8.
     """
-    prefixes = ("LICENSE", "LICENCE", "COPYING", "NOTICE")
-    texts = []
-    for path in dist.files or []:
-        parts = path.parts
-        dist_info = next((i for i, part in enumerate(parts) if part.endswith(".dist-info")), None)
-        if dist_info is None:
-            continue
-        rest = parts[dist_info + 1 :]
-        in_licenses = len(rest) > 1 and rest[0] == "licenses"
-        at_top = len(rest) == 1 and rest[0].upper().startswith(prefixes)
-        if in_licenses or at_top:
-            texts.append((str(path), read_utf8(path)))
-    return texts
-
-
-def python_license_texts() -> list[tuple[str, str]]:
-    """Return [("LICENSE.txt", text)] for the running Python, or [] when it has none.
-
-    A distribution's Python may leave the file out of its standard library directory
-    (Debian does); uv's managed builds keep it. Raises ValueError for one that is not
-    UTF-8.
-    """
-    path = Path(sysconfig.get_path("stdlib"), "LICENSE.txt")
-    return [(path.name, read_utf8(path))] if path.is_file() else []
+    license_file = re.compile(
+        r"(^|/)[^/]+\.dist-info/(licenses/.+|(?i:licen[cs]e|copying|notice)[^/]*)$")
+    return [(str(path), read_utf8(path)) for path in dist.files or []
+            if license_file.search(path.as_posix())]
 
 
 def read_utf8(path: Path | PackagePath) -> str:
@@ -103,12 +112,22 @@ def section(title: str, texts: list[tuple[str, str]]) -> str:
 
 def main() -> int:
     """Print the notices for the listing on stdin to stdout; return the exit status."""
+    python = ".".join(platform.python_version_tuple()[:2])
+    lxml = distribution("lxml").version
+    if (python, lxml) != (NOTICED_PYTHON, NOTICED_LXML):
+        print(f"third_party_notices.py: packaging/licenses/ holds the C library notices of "
+              f"Python {NOTICED_PYTHON} and lxml {NOTICED_LXML}, but this build has Python "
+              f"{python} and lxml {lxml}; packaging/licenses/README.md says how to refresh "
+              "them", file=sys.stderr)
+        return 1
     # (title, license files) per component, in the order the notices list them.
     components = [
-        (f"Python {platform.python_version()}", python_license_texts()),
-        ("PyInstaller bootloader (GPL-2.0-or-later WITH Bootloader-exception)",
-         license_texts(distribution("pyinstaller"))),
+        (title, [(f"packaging/licenses/{name}", read_utf8(NATIVE_LICENSES / name))
+                 for name in names])
+        for title, names in NATIVE_NOTICES
     ]
+    components.append(("PyInstaller bootloader (GPL-2.0-or-later WITH Bootloader-exception)",
+                       license_texts(distribution("pyinstaller"))))
     for dist in bundled_distributions(sys.stdin):
         # Only the SPDX field: the older License field often holds a whole license text.
         expression = dist.metadata.get("License-Expression")

@@ -144,6 +144,6 @@ the binary with `packaging/build-binary.sh` and publishes it as release `v<versi
 
 ## License
 
-MIT; see `LICENSE`. The release binary also bundles Python and the packages hyprmuse
-depends on, each under its own license; each release carries their notices as
-`hyprmuse-third-party-licenses.txt`.
+MIT; see `LICENSE`. The release binary also bundles Python, the packages hyprmuse
+depends on, and the C libraries linked into them, each under its own license; each
+release carries their notices as `hyprmuse-third-party-licenses.txt`.
