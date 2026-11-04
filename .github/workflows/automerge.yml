@@ -2,11 +2,13 @@
 # on its head commit, so a pull request lands without a human. It merges only a pull
 # request whose every file is one the gate judges rather than one that configures it:
 # Python under hyprmuse/ or tests/, and Markdown at the root or under docs/; never a
-# conftest.py. Anything else waits for a human, since CI judged the pull request by its
-# own copy of it: CI's files, pytest's, coverage's and ruff's configuration wherever it
-# sits, uv.lock, a .gitattributes that hides lines from git diff, and any file named later.
+# conftest.py, nor a symlink or submodule, which git diffs as the one line naming its
+# target, so the gate never sees the code behind it. Anything else waits for a human,
+# since CI judged the pull request by its own copy of it: CI's files, pytest's,
+# coverage's and ruff's configuration wherever it sits, uv.lock, a .gitattributes that
+# hides lines from git diff, and any file named later.
 # Also held: drafts; pull requests labelled no-automerge, from forks or into another
-# branch; and one whose files cannot all be listed.
+# branch; and one whose files cannot all be listed or whose diff cannot be read.
 #
 # GitHub runs this from main's copy for status events, so a pull request cannot change
 # these rules for itself. It trusts a success only from Jenkins's GitHub App
@@ -72,6 +74,9 @@ jobs:
             elif grep -vqE '^(hyprmuse|tests)/.*\.py$|^(docs/.*)?[^/]*\.md$' <<<"$paths" ||
               grep -qE '(^|/)conftest\.py$' <<<"$paths"; then
               echo "#$pr: changes files outside what auto-merge lands; held for a human"
+            # The files endpoint has no file mode, so the diff is read for one.
+            elif ! patch=$(gh pr diff "$pr") || grep -qE '^new (file )?mode 1[26]0000$' <<<"$patch"; then
+              echo "#$pr: adds a symlink or submodule, or its diff could not be read; held for a human"
             elif ! gh pr merge "$pr" --merge --match-head-commit "$SHA"; then
               echo "::error::#$pr: merge failed"
               failed=1
