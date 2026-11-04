@@ -37,6 +37,6 @@ on each pull request through its GitHub App.
 
 Once that passes on a pull request's head commit, `.github/workflows/automerge.yml` merges it into `main` with a merge
 commit and deletes its branch: opening a pull request is handing it over. To keep one for a human, open it as a draft
-or label it `no-automerge`. One that changes `.github/`, `scripts/gate`, `pyproject.toml`, `uv.lock` or the
-`Jenkinsfile` always waits for a human, since CI judged it by its own copy of those. Never merge a pull request
-yourself.
+or label it `no-automerge`. One that changes what judges it — CI's own files, or pytest's, coverage's or the tools'
+configuration; the list heads `automerge.yml` — always waits for a human, since CI judged it by its own copy of those.
+Never merge a pull request yourself.

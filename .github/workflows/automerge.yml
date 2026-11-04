@@ -2,9 +2,11 @@
 # on its head commit, so a pull request lands without a human. Held for a human instead:
 # drafts; pull requests labelled no-automerge; pull requests from forks or into another
 # branch; and pull requests that change what judges them, since CI ran the pull
-# request's own copy of those: .github/, scripts/gate, Jenkinsfile, and pyproject.toml
-# and uv.lock, which set pytest's and coverage's options and the tool versions the gate
-# runs. A pull request whose files cannot all be listed is held too.
+# request's own copy of those. That list's one home is the regex below: CI's own files
+# (.github/, scripts/gate, Jenkinsfile), and every file pytest or coverage.py reads its
+# options from, or that pins the tool versions the gate runs (pyproject.toml, uv.lock,
+# setup.cfg, tox.ini, pytest.ini, .pytest.ini, .coveragerc). A pull request whose files
+# cannot all be listed is held too.
 #
 # GitHub runs this from main's copy for status events, so a pull request cannot change
 # these rules for itself. It trusts a success only from Jenkins's GitHub App
@@ -38,14 +40,23 @@ jobs:
           GH_REPO: ${{ github.repository }}
           SHA: ${{ github.event.sha }}
         run: |
-          # Fails the run when a pull request that should have merged did not, after trying the rest.
+          # 1 when a pull request may have passed but was not merged: a merge or a lookup failed.
           failed=0
           # Every open pull request whose head is the commit that passed.
-          for pr in $(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '.[] | select(.state == "open") | .number'); do
-            IFS=$'\t' read -r head branch base draft fork held changed <<<"$(gh pr view "$pr" \
+          if ! prs=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '.[] | select(.state == "open") | .number'); then
+            echo "::error::could not list the pull requests at $SHA"
+            exit 1
+          fi
+          for pr in $prs; do
+            if ! fields=$(gh pr view "$pr" \
               --json headRefOid,headRefName,baseRefName,isDraft,isCrossRepository,labels,changedFiles \
               --jq '[.headRefOid, .headRefName, .baseRefName, .isDraft, .isCrossRepository,
-                     any(.labels[]; .name == "no-automerge"), .changedFiles] | @tsv')"
+                     any(.labels[]; .name == "no-automerge"), .changedFiles] | @tsv'); then
+              echo "::error::#$pr: could not read it"
+              failed=1
+              continue
+            fi
+            IFS=$'\t' read -r head branch base draft fork held changed <<<"$fields"
             if [ "$head" != "$SHA" ]; then
               echo "#$pr: its head moved on from $SHA; that commit's own check decides"
               continue
@@ -58,7 +69,7 @@ jobs:
             if ! paths=$(gh api --paginate "repos/$GH_REPO/pulls/$pr/files" \
               --jq '.[] | .filename, (.previous_filename // empty)') || ((changed >= 3000)); then
               echo "#$pr: could not list all its files; held for a human"
-            elif grep -qE '^(\.github/|scripts/gate$|pyproject\.toml$|uv\.lock$)|^Jenkinsfile$' <<<"$paths"; then
+            elif grep -qE '^(\.github/|scripts/gate$|(pyproject\.toml|uv\.lock|setup\.cfg|tox\.ini|\.?pytest\.ini|\.coveragerc)$)|^Jenkinsfile$' <<<"$paths"; then
               echo "#$pr: changes what judges it; held for a human"
             elif ! gh pr merge "$pr" --merge --match-head-commit "$SHA"; then
               echo "::error::#$pr: merge failed"

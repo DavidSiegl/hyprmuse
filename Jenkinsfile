@@ -2,8 +2,9 @@
 // gate (scripts/gate) on each, failing the build on GATE: ERROR or when the gate could not
 // judge. For a pull request, Jenkins's GitHub App reports the result as the commit status
 // continuous-integration/jenkins/pr-head, which auto-merge trusts only from that App, as
-// does the ci-cd ruleset on main once init/github-rules.py has set it. docs/agents/README.md says how a pull request then merges; the
-// agent-estate README, "Jenkins", says what the job and the agent need.
+// does the ci-cd ruleset on main once agent-estate's init/github-rules.py has set it.
+// docs/agents/README.md says how a pull request then merges; the agent-estate README,
+// "Jenkins", says what the job and the agent need.
 pipeline {
     // Builds run code agents wrote: only on agents that hold nothing an agent should not
     // have. Jenkins enforces that per node (Job Restrictions plugin), not this label.
