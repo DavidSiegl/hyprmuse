@@ -3,6 +3,7 @@ name = "hyprmuse"
 version = "0.3.0"
 description = "Random quotes from musicians, authors and poets for hyprlock"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.14"
 dependencies = [
     "beautifulsoup4>=4.14.3",
