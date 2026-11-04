@@ -1,0 +1,41 @@
+// The hyprmuse-aur job: after each successful build of main, brings the AUR's hyprmuse-bin up
+// to the latest GitHub release with packaging/aur/publish.sh. A build that finds the AUR
+// current does nothing, so the many main builds that release nothing cost one clone each.
+//
+// It holds the AUR push key, so it is a Pipeline job of its own, not part of the multibranch
+// job: that one runs pull requests' own Jenkinsfiles on the untrusted agent before review.
+// This job must read this file from main only, run on a node no agent-written build reaches,
+// and keep the key in its folder's credential store. Ticket 03 of the aur-package spec has the setup.
+pipeline {
+    agent { label 'trusted' }
+
+    // The full name of the multibranch job's main branch.
+    triggers { upstream(upstreamProjects: 'hyprmuse/main', threshold: hudson.model.Result.SUCCESS) }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        timeout(time: 15, unit: 'MINUTES')
+        // Two builds both finding the AUR behind would both push; the second would be refused.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Publish') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'aur-hyprmuse-bin', keyFileVariable: 'AUR_KEY')]) {
+                    sh '''
+                        export GIT_SSH_COMMAND="ssh -i '$AUR_KEY' -o IdentitiesOnly=yes \
+                            -o UserKnownHostsFile='$PWD/packaging/aur/known_hosts' -o StrictHostKeyChecking=yes"
+                        packaging/aur/publish.sh
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}

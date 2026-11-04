@@ -11,8 +11,7 @@
 # Fails, changing nothing, when a download fails, when an asset's hash differs from its .sha256,
 # when no asset has a .sha256 to check, or when the PKGBUILD sets a field srcinfo below does not
 # write. Needs bash, curl and sha256sum, not Arch: .SRCINFO is written here rather than by
-# makepkg --printsrcinfo. Pushing the two files to the AUR's hyprmuse-bin repository is a
-# separate step.
+# makepkg --printsrcinfo. publish.sh pushes the two files to the AUR's hyprmuse-bin repository.
 
 # pkgname, source and the other fields are set by sourcing the PKGBUILD, which shellcheck does not follow.
 # shellcheck disable=SC2154,SC1091

@@ -141,6 +141,11 @@ package's or the tests' Python, or Markdown, merges into `main` without a human.
 
 A merge into `main` that raises `version` in `pyproject.toml` releases it: Jenkins builds
 the binary with `packaging/build-binary.sh` and publishes it as release `v<version>`.
+The Jenkins job `hyprmuse-aur` (`packaging/aur/Jenkinsfile`) then pushes the AUR's
+`hyprmuse-bin` to that release with `packaging/aur/publish.sh`, which uses `update.sh`
+to write its PKGBUILD and `.SRCINFO`. To change the package itself, edit
+`packaging/aur/PKGBUILD`, raise `pkgrel`, and run `packaging/aur/update.sh` with the
+current version. The change reaches the AUR with the next release.
 
 ## License
 
