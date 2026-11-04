@@ -1,9 +1,10 @@
 # Merges a pull request into main, with a merge commit, once the quality gate has passed
 # on its head commit, so a pull request lands without a human. It merges only a pull
-# request whose every file is one the gate judges rather than one that configures it: the
-# package (hyprmuse/), tests/ except any conftest.py, docs/, and Markdown at the root.
-# Anything else waits for a human, since CI judged the pull request by its own copy of it:
-# CI's files, pytest's and coverage's configuration, uv.lock, and any file named later.
+# request whose every file is one the gate judges rather than one that configures it:
+# Python under hyprmuse/ or tests/, and Markdown at the root or under docs/; never a
+# conftest.py. Anything else waits for a human, since CI judged the pull request by its
+# own copy of it: CI's files, pytest's, coverage's and ruff's configuration wherever it
+# sits, uv.lock, a .gitattributes that hides lines from git diff, and any file named later.
 # Also held: drafts; pull requests labelled no-automerge, from forks or into another
 # branch; and one whose files cannot all be listed.
 #
@@ -68,7 +69,7 @@ jobs:
             if ! paths=$(gh api --paginate "repos/$GH_REPO/pulls/$pr/files" \
               --jq '.[] | .filename, (.previous_filename // empty)') || ((changed >= 3000)); then
               echo "#$pr: could not list all its files; held for a human"
-            elif grep -vqE '^(hyprmuse|tests|docs)/|^[^/]*\.md$' <<<"$paths" ||
+            elif grep -vqE '^(hyprmuse|tests)/.*\.py$|^(docs/.*)?[^/]*\.md$' <<<"$paths" ||
               grep -qE '(^|/)conftest\.py$' <<<"$paths"; then
               echo "#$pr: changes files outside what auto-merge lands; held for a human"
             elif ! gh pr merge "$pr" --merge --match-head-commit "$SHA"; then
