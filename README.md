@@ -116,3 +116,15 @@ author with nine quotes.
 ```
 
 Harvested text lives outside the repository, so scraped content stays out of git.
+
+## Development
+
+```bash
+uv run pytest               # the tests
+scripts/gate origin/main    # the tests with coverage, then octoflow-ai's quality gate on
+                            # the change since origin/main, as Jenkins runs it; writes quality.md
+```
+
+Opening a pull request hands it over: once Jenkins passes it, one that changes only the
+package's or the tests' Python, or Markdown, merges into `main` without a human.
+`docs/agents/README.md` has the exact rule and how to hold a pull request back.
