@@ -6,4 +6,7 @@ None recorded yet.
 
 ## Open issues
 
-Tracked as GitHub issues: https://github.com/DavidSiegl/hyprmuse/issues
+- **Each source's HTTP politeness is spread over its call sites.** Now
+  [#7](https://github.com/DavidSiegl/hyprmuse/issues/7).
+- **Two rules decide which stored subject a token means.** Now
+  [#8](https://github.com/DavidSiegl/hyprmuse/issues/8).
