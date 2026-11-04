@@ -4,12 +4,14 @@
 #
 #   scripts/gate [BASE]     BASE is any git revision; default main.
 #
+# The rules are BASE's pyproject.toml, so a change cannot loosen the rules it is judged
+# by; the tree's own only when BASE has no pyproject.toml. What each check means is in
+# https://github.com/DavidSiegl/octoflow-ai/blob/main/docs/quality-gate.md
+#
 # Exit status is gate.py's: 0 for GATE: OK, 1 for GATE: ERROR, 2 when it could not
 # judge the change, which includes this script failing before gate.py runs (no download,
 # a hash mismatch, pytest unable to run the tests). A failing test does not stop the
 # run; the gate reports it.
-# The rules come from pyproject.toml; what each check means is in
-# https://github.com/DavidSiegl/octoflow-ai/blob/main/docs/quality-gate.md
 #
 # gate.py is downloaded once per pinned commit into $XDG_CACHE_HOME/octoflow-gate/
 # and refused unless its SHA-256 matches. To move to a newer gate, change both pins.
@@ -23,20 +25,27 @@ gate_sha256=2165e8f2217f473974a21f1c5538aa6887d1df56fbabfa11319226dfbfa180a3
 base=${1:-main}
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/octoflow-gate/$gate_commit"
 gate="$cache/gate.py"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
 
 if [[ ! -f $gate ]]; then
 	mkdir -p "$cache"
-	tmp=$(mktemp "$cache/gate.py.XXXXXX")
-	trap 'rm -f "$tmp"' EXIT
-	curl -fsSL "https://raw.githubusercontent.com/DavidSiegl/octoflow-ai/$gate_commit/gate.py" -o "$tmp"
-	if ! echo "$gate_sha256  $tmp" | sha256sum --check --status; then
+	curl -fsSL "https://raw.githubusercontent.com/DavidSiegl/octoflow-ai/$gate_commit/gate.py" -o "$work/gate.py"
+	if ! echo "$gate_sha256  $work/gate.py" | sha256sum --check --status; then
 		echo "gate: downloaded gate.py does not match the pinned SHA-256" >&2
 		exit 2
 	fi
-	mv "$tmp" "$gate"
+	mv "$work/gate.py" "$gate"
 fi
 
-cd "$(git rev-parse --show-toplevel)"
+top=$(git rev-parse --show-toplevel)
+cd "$top"
+rules=()
+if git cat-file -e "$base:pyproject.toml" 2>/dev/null; then
+	git show "$base:pyproject.toml" >"$work/pyproject.toml"
+	rules=(--config "$work/pyproject.toml")
+fi
+
 # The reports are gitignored and outlive a run: remove them so a pytest that writes none
 # cannot leave gate.py the last run's.
 rm -f test-results.xml coverage.xml
@@ -49,4 +58,4 @@ if ((status > 1)); then
 	exit 2
 fi
 trap - ERR
-uv run python "$gate" --base "$base" --tests test-results.xml --coverage coverage.xml --out quality.md
+uv run python "$gate" --base "$base" "${rules[@]}" --tests test-results.xml --coverage coverage.xml --out quality.md

@@ -1,0 +1,67 @@
+// Builds main and every pull request in a Multibranch Pipeline job and runs the quality
+// gate (scripts/gate) on each, failing the build on GATE: ERROR or when the gate could not
+// judge. For a pull request, Jenkins's GitHub App reports the result as the commit status
+// continuous-integration/jenkins/pr-head, which auto-merge and the main ruleset trust
+// only from that App. docs/agents/README.md says how a pull request then merges; the
+// agent-estate README, "Jenkins", says what the job and the agent need.
+pipeline {
+    // Builds run code agents wrote: only on agents that hold nothing an agent should not
+    // have. Jenkins enforces that per node (Job Restrictions plugin), not this label.
+    agent { label 'untrusted' }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        timeout(time: 60, unit: 'MINUTES')
+    }
+
+    environment {
+        UV_NO_PROGRESS = '1'
+    }
+
+    stages {
+        stage('Install') {
+            steps {
+                sh 'uv sync --frozen'
+            }
+        }
+
+        stage('Gate') {
+            steps {
+                script {
+                    def base
+                    if (env.CHANGE_TARGET) {
+                        // A pull request: everything since it left its target branch.
+                        base = sh(returnStdout: true, script: '''
+                            git fetch --quiet origin "+refs/heads/$CHANGE_TARGET:refs/remotes/origin/$CHANGE_TARGET"
+                            git merge-base HEAD "origin/$CHANGE_TARGET"
+                        ''').trim()
+                    } else {
+                        // A branch build: since the last successful build, or the last commit when
+                        // there is none or a force-push removed it.
+                        def previous = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT
+                        def kept = previous && sh(returnStatus: true,
+                                                  script: 'git cat-file -e "$GIT_PREVIOUS_SUCCESSFUL_COMMIT^{commit}"') == 0
+                        base = kept ? previous : 'HEAD^1'
+                    }
+                    // The base reaches the shell as an environment variable, never as Groovy-built shell code.
+                    def status
+                    withEnv(["GATE_BASE=${base}"]) {
+                        status = sh(returnStatus: true, script: 'scripts/gate "$GATE_BASE"')
+                    }
+                    if (status == 1) {
+                        error('GATE: ERROR - see quality.md')
+                    } else if (status != 0) {
+                        error("the gate could not judge the change (exit status ${status})")
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'quality.md', allowEmptyArchive: true
+            cleanWs()
+        }
+    }
+}
