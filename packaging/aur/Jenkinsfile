@@ -1,16 +1,28 @@
-// The hyprmuse-aur job: after each successful build of main, brings the AUR's hyprmuse-bin up
-// to the latest GitHub release with packaging/aur/publish.sh. A build that finds the AUR
-// current does nothing, so the many main builds that release nothing cost one clone each.
+// The hyprmuse-aur job: makes the AUR's hyprmuse-bin what packaging/aur/PKGBUILD on main gives
+// for the latest GitHub release, with packaging/aur/publish.sh. A build that finds the AUR
+// current pushes nothing.
 //
 // It holds the AUR push key, so it is a Pipeline job of its own, not part of the multibranch
-// job: that one runs pull requests' own Jenkinsfiles on the untrusted agent before review.
-// This job must read this file from main only, run on a node no agent-written build reaches,
-// and keep the key in its folder's credential store. Ticket 03 of the aur-package spec has the setup.
+// job, whose pull-request builds run their own Jenkinsfiles on the untrusted agent before
+// review. It needs:
+//   - "Pipeline script from SCM" on this repository, branch main only, script path
+//     packaging/aur/Jenkinsfile, so only reviewed code sees the key;
+//   - in its folder's credential store, an "SSH Username with private key" credential with
+//     ID aur-hyprmuse-bin, username aur, whose public key is on the AUR account;
+//   - a node labelled trusted that no agent-written build can reach (Job Restrictions), with
+//     bash, curl, git, ssh and sha256sum;
+//   - one "Build Now" to create the AUR package, unless main builds first.
+pipeline {
 pipeline {
     agent { label 'trusted' }
 
-    // The full name of the multibranch job's main branch.
-    triggers { upstream(upstreamProjects: 'hyprmuse/main', threshold: hudson.model.Result.SUCCESS) }
+    triggers {
+        // After each successful build of main (the multibranch job's full name for it), which is
+        // when a release appears; daily too, so a failed run, or a main build that failed after
+        // releasing, is retried without waiting for the next merge.
+        upstream(upstreamProjects: 'hyprmuse/main', threshold: hudson.model.Result.SUCCESS)
+        cron('H H * * *')
+    }
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '30'))
@@ -25,7 +37,8 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: 'aur-hyprmuse-bin', keyFileVariable: 'AUR_KEY')]) {
                     sh '''
                         export GIT_SSH_COMMAND="ssh -i '$AUR_KEY' -o IdentitiesOnly=yes \
-                            -o UserKnownHostsFile='$PWD/packaging/aur/known_hosts' -o StrictHostKeyChecking=yes"
+                            -o UserKnownHostsFile='$PWD/packaging/aur/known_hosts' -o GlobalKnownHostsFile=/dev/null \
+                            -o StrictHostKeyChecking=yes"
                         packaging/aur/publish.sh
                     '''
                 }
