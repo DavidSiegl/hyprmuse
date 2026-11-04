@@ -146,7 +146,9 @@ package's or the tests' Python, or Markdown, merges into `main` without a human.
 `docs/agents/README.md` has the exact rule and how to hold a pull request back.
 
 A merge into `main` that raises `version` in `pyproject.toml` releases it: Jenkins builds
-the binary with `packaging/build-binary.sh` and publishes it as release `v<version>`.
+the binary with `packaging/build-binary.sh`, and the sdist and wheel with `uv build`, and
+publishes them as release `v<version>`. The Jenkins job `hyprmuse-pypi`
+(`packaging/pypi/Jenkinsfile`) then uploads the sdist and wheel to PyPI.
 
 ## License
 
