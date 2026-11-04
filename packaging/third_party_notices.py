@@ -44,7 +44,9 @@ NOTICED_LXML = "6.0.2"
 
 # (title, files in NATIVE_LICENSES) per component, in the order the notices list them.
 NATIVE_NOTICES = [
-    ("Python 3.14, and the software it incorporates", ["cpython.txt", "cpython-incorporated.rst"]),
+    (f"Python {NOTICED_PYTHON}, and the software it incorporates",
+     ["cpython.txt", "cpython-incorporated.rst"]),
+    ("HACL*, in Python's hashlib modules", ["hacl.txt"]),
     ("OpenSSL 3, linked into Python", ["openssl.txt"]),
     ("libffi, linked into Python", ["libffi.txt"]),
     ("Expat, linked into Python", ["expat.txt"]),
