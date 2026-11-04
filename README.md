@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="assets/logo.svg" width="84" height="84" alt="">
+  <img src="https://raw.githubusercontent.com/DavidSiegl/hyprmuse/main/assets/logo.svg" width="84" height="84" alt="">
   <br>
   hyprmuse
 </h1>
@@ -45,6 +45,12 @@ curl -LO https://github.com/DavidSiegl/hyprmuse/releases/latest/download/hyprmus
 curl -LO https://github.com/DavidSiegl/hyprmuse/releases/latest/download/hyprmuse-linux-x86_64.sha256
 sha256sum -c hyprmuse-linux-x86_64.sha256
 install -D -m 755 hyprmuse-linux-x86_64 ~/.local/bin/hyprmuse
+```
+
+Or install it from PyPI, which needs Python 3.14; uv fetches it if the system has none:
+
+```bash
+uv tool install hyprmuse     # or: pipx install hyprmuse
 ```
 
 Or run it from a checkout with `uv sync`, then `uv run hyprmuse` in place of `hyprmuse`

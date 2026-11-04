@@ -61,11 +61,13 @@ pipeline {
             }
         }
 
-        // The Linux binary, built on every pull request and main build, so a change that
-        // breaks it fails before it is merged; Release attaches it.
+        // The Linux binary, and the sdist and wheel PyPI gets, built on every pull request
+        // and main build, so a change that breaks them fails before it is merged; Release
+        // attaches them.
         stage('Package') {
             steps {
                 sh 'packaging/build-binary.sh'
+                sh 'uv build --out-dir dist'
             }
         }
 
@@ -112,8 +114,10 @@ pipeline {
                             exit 1
                         fi
                         # Whatever packaging/build-binary.sh built for this agent's architecture,
-                        # which names it, and the licenses of what that bundles.
-                        set -- dist/hyprmuse-linux-* dist/hyprmuse-third-party-licenses.txt
+                        # which names it, the licenses of what that bundles, and the sdist and
+                        # wheel, which packaging/pypi/publish.sh uploads from the release.
+                        set -- dist/hyprmuse-linux-* dist/hyprmuse-third-party-licenses.txt \
+                            "dist/hyprmuse-$version.tar.gz" "dist/hyprmuse-$version-py3-none-any.whl"
                         for asset; do
                             [ -f "$asset" ] || { echo "no $asset; run the whole build" >&2; exit 1; }
                         done
