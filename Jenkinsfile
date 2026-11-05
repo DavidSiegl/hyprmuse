@@ -1,5 +1,5 @@
 // Builds main and every pull request in a Multibranch Pipeline job and runs the quality
-// gate (scripts/gate) on each, unless it changes docs alone, failing the build on GATE:
+// gate (scripts/gate) on each, failing the build on GATE:
 // ERROR or when the gate could not judge. For a pull request, Jenkins's GitHub App
 // reports the result as the commit status continuous-integration/jenkins/pr-head, which
 // auto-merge trusts only from that App, as does the ci-cd ruleset on main once
@@ -25,9 +25,8 @@ pipeline {
     }
 
     stages {
-        // The change this build judges, from GATE_BASE to HEAD, and whether it touches docs
-        // alone (docs/ and Markdown at the top level), in which case DOCS_ONLY is 'true' and
-        // Install and Gate are skipped: the owner's rule, 2026-11-05.
+        // The change this build judges, from GATE_BASE to HEAD. scripts/gate decides how much
+        // of it to run: a change to docs alone runs its linters and no tests.
         stage('Change') {
             steps {
                 script {
@@ -49,26 +48,17 @@ pipeline {
                     // The base reaches the shell as an environment variable, never as Groovy-built
                     // shell code.
                     env.GATE_BASE = base
-                    // 0 only when nothing outside the docs changed; a git error runs the gate.
-                    env.DOCS_ONLY = sh(returnStatus: true, script: '''
-                        git diff --quiet "$GATE_BASE" HEAD -- . ':(exclude)docs' ':(exclude,glob)*.md'
-                    ''') == 0 ? 'true' : 'false'
-                    if (env.DOCS_ONLY == 'true') {
-                        echo 'Only docs changed: no install and no gate.'
-                    }
                 }
             }
         }
 
         stage('Install') {
-            when { expression { env.DOCS_ONLY != 'true' } }
             steps {
                 sh 'uv sync --frozen'
             }
         }
 
         stage('Gate') {
-            when { expression { env.DOCS_ONLY != 'true' } }
             steps {
                 script {
                     def status = sh(returnStatus: true, script: 'scripts/gate "$GATE_BASE"')

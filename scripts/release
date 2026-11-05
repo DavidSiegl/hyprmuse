@@ -18,11 +18,12 @@
 #       would go unreleased.
 #   scripts/release publish
 #       Create GitHub release v<version> at HEAD with gh (GH_TOKEN must allow it), unless
-#       it exists. When the repo has scripts/package, run it first and attach every file
-#       it leaves directly in dist/release/. Fails, creating nothing, when the version is
-#       below the latest release; when scripts/package fails, leaves no file, or leaves a
-#       directory or a name with a `#` (which gh reads as a label) in dist/release/; or
-#       when gh fails for any reason but a missing release.
+#       it exists. When the repo has scripts/package, run it first, without GH_TOKEN or
+#       GITHUB_TOKEN in its environment, and attach every file it leaves directly in
+#       dist/release/. Fails, creating nothing, when the version is below the latest
+#       release; when scripts/package fails, leaves no file, or leaves a directory or a
+#       name with a `#` (which gh reads as a label) in dist/release/; or when gh fails
+#       for any reason but a missing release.
 #
 # The release version is pyproject.toml's [project] version, read at the commit (HEAD,
 # TARGET), not from the work tree. Versions compare release number by release number,
@@ -102,13 +103,16 @@ touches_released() {
     esac
 }
 
-# Prints pyproject.toml's [project] version at commit $1, written as TOML allows (either
-# quote, any spacing, a trailing comment, CRLF line ends). Exits 2 when it has none.
+# Prints pyproject.toml's [project] version at commit $1. It reads the header and the key
+# however TOML lets them be spaced or indented, either quote, a trailing comment and CRLF
+# line ends; not a quoted or dotted key ("version" = …, project.version = …). Exits 2 when
+# it finds none.
 version_at() {
     text=$(git show "$1:pyproject.toml") || fail "cannot read pyproject.toml at $1"
+    # From the [project] header to the next line shaped like a table header.
     version=$(printf '%s\n' "$text" | tr -d '\r' | sed -n "
-        /^\[project\][[:space:]]*\(#.*\)\{0,1\}\$/,/^\[/{
-            s/^version[[:space:]]*=[[:space:]]*[\"']\([^\"']*\)[\"'][[:space:]]*\(#.*\)\{0,1\}\$/\1/p
+        /^[[:space:]]*\[[[:space:]]*project[[:space:]]*\][[:space:]]*\(#.*\)\{0,1\}\$/,/^[[:space:]]*\[.*\][[:space:]]*\(#.*\)\{0,1\}\$/{
+            s/^[[:space:]]*version[[:space:]]*=[[:space:]]*[\"']\([^\"']*\)[\"'][[:space:]]*\(#.*\)\{0,1\}\$/\1/p
         }" | head -n 1)
     [ -n "$version" ] || fail "no version in pyproject.toml's [project] table at $1"
     echo "$version"
@@ -221,9 +225,11 @@ publish() {
 
     # The assets: what scripts/package leaves in dist/release/, built here rather than
     # taken from an earlier stage, so that what is released is what HEAD builds.
+    # Packaging runs build tools and their dependencies, none of which needs the release
+    # token, so they never see it.
     set --
     if [ -e scripts/package ]; then
-        scripts/package || fail "scripts/package failed"
+        (unset GH_TOKEN GITHUB_TOKEN; exec scripts/package) || fail "scripts/package failed"
         set +f
         for f in dist/release/* dist/release/.[!.]* dist/release/..?*; do
             [ -e "$f" ] || [ -L "$f" ] || continue

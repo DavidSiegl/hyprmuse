@@ -4,6 +4,11 @@
 #
 #   scripts/gate [BASE]     BASE is any git revision; default main.
 #
+# A change to docs alone (docs/ and Markdown at the top level, the owner's rule of
+# 2026-11-05) runs no tests: gate.py then judges its linters' findings, such as
+# pymarkdown's, and no tests or coverage. Any other tracked or untracked file differing
+# from BASE, or a git error while looking, runs everything.
+#
 # gate.py's rules are BASE's pyproject.toml (the tree's own only when BASE has no
 # pyproject.toml), so a change to them first applies to the changes after it. This script,
 # pytest's and coverage's options and the tool versions in uv.lock are the tree's, so a
@@ -67,13 +72,27 @@ if ! base=$(git rev-parse --verify --quiet "$base^{commit}"); then
 	exit 2
 fi
 
-# pytest exits 1 when tests failed, which the gate judges; anything else means the tests
-# did not run (https://docs.pytest.org/en/stable/reference/exit-codes.html).
-status=0
-uv run pytest --cov=hyprmuse --cov-branch --cov-report=xml --junitxml=test-results.xml || status=$?
-if ((status > 1)); then
-	echo "gate: pytest exited $status, so the tests did not run" >&2
-	exit 2
+# docs_only: whether nothing outside the docs differs from BASE (the header).
+not_docs=(-- . ':(exclude)docs' ':(exclude,glob)*.md')
+docs_only=false
+if git diff --quiet "$base" "${not_docs[@]}" &&
+	untracked=$(git ls-files --others --exclude-standard "${not_docs[@]}") && [[ -z $untracked ]]; then
+	docs_only=true
+fi
+
+reports=()
+if $docs_only; then
+	echo "gate: only docs changed since ${1:-main}: no tests, linters only" >&2
+else
+	# pytest exits 1 when tests failed, which the gate judges; anything else means the
+	# tests did not run (https://docs.pytest.org/en/stable/reference/exit-codes.html).
+	status=0
+	uv run pytest --cov=hyprmuse --cov-branch --cov-report=xml --junitxml=test-results.xml || status=$?
+	if ((status > 1)); then
+		echo "gate: pytest exited $status, so the tests did not run" >&2
+		exit 2
+	fi
+	reports=(--tests test-results.xml --coverage coverage.xml)
 fi
 
 # The judge and its rules are copied only now that the tests have run, and any quality.md
@@ -95,8 +114,7 @@ fi
 trap - ERR
 status=0
 # -I: nothing on sys.path from gate.py's directory, the working directory or PYTHON*.
-uv run python -I "$work/gate.py" --base "$base" "${rules[@]}" --tests test-results.xml --coverage coverage.xml \
-	--out quality.md || status=$?
+uv run python -I "$work/gate.py" --base "$base" "${rules[@]}" "${reports[@]}" --out quality.md || status=$?
 case $status in
 0) ;;
 1)

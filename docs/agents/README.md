@@ -32,9 +32,9 @@ fix or justify each finding to weigh.
 ## CI and merging
 
 Jenkins builds every pull request and `main` with the `Jenkinsfile`, running `scripts/gate` over a pull request since
-its merge base and over `main` since its last successful build, skipping it when only docs changed (`docs/` and
-top-level Markdown), and reports `continuous-integration/jenkins/pr-head`
-on each pull request through its GitHub App.
+its merge base and over `main` since its last successful build, and reports `continuous-integration/jenkins/pr-head`
+on each pull request through its GitHub App. A change to docs alone (`docs/` and top-level Markdown) runs the gate's
+linters and no tests.
 
 Once that passes on a pull request's head commit, `.github/workflows/automerge.yml` merges it into `main` with a merge
 commit and deletes its branch: opening a pull request is handing it over. To keep one for a human, open it as a draft
