@@ -3,7 +3,7 @@
 import difflib
 
 from ..text import mark_stanzas
-from .base import Candidate, Item, Source, SourceError, Subject, get
+from .base import Candidate, Client, Item, SourceError, Subject
 
 API = "https://poetrydb.org"
 
@@ -13,8 +13,12 @@ class PoetryDB:
     domain = "poetry"
     produces_atomic = False
 
+    def __init__(self, client: Client):
+        """``client`` makes every request this source sends."""
+        self._client = client
+
     def _authors(self) -> list[str]:
-        return get(f"{API}/author", key="poetrydb", throttle=0.2).json().get("authors", [])
+        return self._client.get(f"{API}/author").json().get("authors", [])
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
         authors = self._authors()
@@ -34,8 +38,7 @@ class PoetryDB:
         url = f"{API}/author/{name.replace(' ', '%20')}"
         if progress:
             progress(f"fetching poems by {name}")
-        resp = get(f"{API}/author/{source_id}/title,author,lines",
-                   key="poetrydb", throttle=0.2)
+        resp = self._client.get(f"{API}/author/{source_id}/title,author,lines")
         poems = resp.json()
         if isinstance(poems, dict):  # PoetryDB reports misses as {"status":404,...}
             raise SourceError(f"poetrydb: no poems for {name}")
@@ -54,4 +57,4 @@ class PoetryDB:
         )
 
 
-SOURCE = PoetryDB()
+SOURCE = PoetryDB(Client(gap=0.2))

@@ -1,5 +1,9 @@
 """Passage and header extraction from a Gutenberg plaintext."""
 
+import pytest
+
+from hyprmuse.sources import gutenberg
+from hyprmuse.sources.base import SourceError
 from hyprmuse.sources.gutenberg import extract_passages, read_header
 
 BOOK = """
@@ -81,3 +85,43 @@ def test_header_fields_come_from_the_preamble_only():
 
 def test_header_without_fields_is_empty():
     assert read_header(BOOK) == {}
+
+
+TEXT_URLS = [f"{gutenberg.BASE}/cache/epub/7/pg7.txt",
+             f"{gutenberg.BASE}/files/7/7-0.txt",
+             f"{gutenberg.BASE}/ebooks/7.txt.utf-8"]
+
+
+def test_fetch_falls_back_to_the_third_url(fake_client, fake_response):
+    """The first URL fails outright and the second holds no passages."""
+    client = fake_client({TEXT_URLS[1]: fake_response(text="Title: Empty\n"),
+                          TEXT_URLS[2]: fake_response(text=BOOK)})
+    subject = gutenberg.Gutenberg(client).fetch("7")
+    assert client.requested == TEXT_URLS
+    assert any(i.lines[0].startswith("The room was colder") for i in subject.items)
+
+
+def test_fetch_stops_at_the_first_url_that_yields_passages(fake_client, fake_response):
+    client = fake_client({TEXT_URLS[0]: fake_response(text=BOOK)})
+    gutenberg.Gutenberg(client).fetch("7")
+    assert client.requested == TEXT_URLS[:1]
+
+
+def test_fetch_fails_when_no_url_yields_the_book(fake_client):
+    with pytest.raises(SourceError, match="could not retrieve ebook 7"):
+        gutenberg.Gutenberg(fake_client({})).fetch("7")
+
+
+SEARCH_PAGE = """<ul>
+<li class="booklink"><a class="link" href="/ebooks/22367">
+  <span class="title">Die Verwandlung</span><span class="subtitle">Franz Kafka</span></a></li>
+<li class="booklink"><a class="link" href="/ebooks/search/?sort_order=release_date">
+  <span class="title">Sort by release date</span></a></li>
+</ul>"""
+
+
+def test_search_reads_book_links_and_skips_other_links(fake_client, fake_response):
+    url = fake_client.url(f"{gutenberg.BASE}/ebooks/search/", {"query": "kafka"})
+    hits = gutenberg.Gutenberg(fake_client({url: fake_response(text=SEARCH_PAGE)})).search("kafka")
+    assert [(h.source_id, h.name, h.hint) for h in hits] == [
+        ("22367", "Die Verwandlung", "Franz Kafka")]

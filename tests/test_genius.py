@@ -131,23 +131,54 @@ def test_lyrics_text_without_a_container_is_none():
     assert genius.lyrics_text("<html><body>no lyrics here</body></html>") is None
 
 
-def test_fetch_names_the_subject_from_the_artists_own_songs(monkeypatch,
+def songs_url(fake_client, page, artist_id="7"):
+    return fake_client.url(f"{genius.API}/artists/{artist_id}/songs",
+                           {"page": page, "sort": "popularity"})
+
+
+def song(title, artist_id=7, artist="Element of Crime"):
+    return {"title": title, "url": f"https://genius.com/{title.lower()}",
+            "primary_artist": {"id": artist_id, "name": artist,
+                               "url": "https://genius.com/artists/eoc"}}
+
+
+def test_fetch_names_the_subject_from_the_artists_own_songs(fake_client,
                                                             fake_response):
     """fetch gets only the id, so the name must come from Genius itself."""
-    songs = {"response": {"next_page": None, "songs": [
-        {"title": "Guest Spot", "url": "https://genius.com/guest",
-         "primary_artist": {"id": 99, "name": "Someone Else", "url": "x"}},
-        {"title": "Delmenhorst", "url": "https://genius.com/delmenhorst",
-         "primary_artist": {"id": 7, "name": "Element of Crime",
-                            "url": "https://genius.com/artists/eoc"}},
-    ]}}
-
-    def get(url, **_):
-        return fake_response(songs) if "/songs" in url else fake_response(text=PAGE)
-
-    monkeypatch.setattr(genius, "get", get)
-    monkeypatch.setattr(genius.time, "sleep", lambda _: None)
-    subject = genius.SOURCE.fetch("7")
+    client = fake_client({
+        songs_url(fake_client, 1): fake_response({"response": {"next_page": None, "songs": [
+            song("guest", artist_id=99, artist="Someone Else"),
+            song("Delmenhorst"),
+        ]}}),
+        "https://genius.com/delmenhorst": fake_response(text=PAGE),
+    })
+    subject = genius.Genius(client).fetch("7")
     assert subject.name == "Element of Crime"
     assert subject.url == "https://genius.com/artists/eoc"
     assert [i.work for i in subject.items] == ["Delmenhorst"]
+    assert "https://genius.com/guest" not in client.requested
+
+
+def test_fetch_follows_the_song_list_across_pages(fake_client, fake_response):
+    client = fake_client({
+        songs_url(fake_client, 1): fake_response(
+            {"response": {"next_page": 2, "songs": [song("first")]}}),
+        songs_url(fake_client, 2): fake_response(
+            {"response": {"next_page": None, "songs": [song("second")]}}),
+        "https://genius.com/first": fake_response(text=PAGE),
+        "https://genius.com/second": fake_response(text=PAGE),
+    })
+    subject = genius.Genius(client).fetch("7")
+    assert [i.work for i in subject.items] == ["first", "second"]
+    assert client.requested[:2] == [songs_url(fake_client, 1), songs_url(fake_client, 2)]
+
+
+def test_search_offers_only_artist_hits_with_an_id(fake_client, fake_response):
+    url = fake_client.url(f"{genius.API}/search/artist", {"q": "element"})
+    client = fake_client({url: fake_response({"response": {"sections": [
+        {"type": "song", "hits": [{"result": {"id": 1, "name": "A Song"}}]},
+        {"type": "artist", "hits": [{"result": {"id": 7, "name": "Element of Crime"}},
+                                    {"result": {"name": "No Id"}}]},
+    ]}})})
+    hits = genius.Genius(client).search("element")
+    assert [(h.source_id, h.name) for h in hits] == [("7", "Element of Crime")]

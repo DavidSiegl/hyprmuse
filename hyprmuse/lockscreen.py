@@ -26,7 +26,7 @@ def quote(cfg: dict, *, subject: str = "", domain: str = "", source: str = "",
     per-subject ``enabled``/``weight`` table. A caller overriding a setting
     replaces its key before the call.
 
-    ``subject`` (a name substring or a ``source:id`` key), ``domain`` and
+    ``subject`` (a token, resolved by ``library.find``), ``domain`` and
     ``source`` restrict which stored subjects are drawn from; empty means any.
     ``seed`` makes the draw deterministic and leaves the repeat history alone.
     ``show_note`` appends the item's citation note, when it has one.
@@ -119,7 +119,7 @@ class _Pick:
 
     def fingerprint(self) -> str:
         """Identifies the quote in the repeat history; equal text, equal print."""
-        seed = f"{self.subject.source}:{self.subject.source_id}:" + "|".join(self.lines)
+        seed = f"{self.subject.key}:" + "|".join(self.lines)
         return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
 
 
@@ -159,27 +159,25 @@ def _candidates(cfg: dict, *, subject: str, domain: str,
                 source: str) -> list[Subject]:
     """Stored subjects with items, minus those disabled in config or filtered out."""
     out = []
-    for subj in library.load_all():
-        settings = cfg.get("subjects", {}).get(
-            library.subject_key(subj.source, subj.source_id), {})
-        if settings.get("enabled") is False:
+    for subj in library.find(subject) if subject else library.load_all():
+        if _settings(subj, cfg).get("enabled") is False:
             continue
         if domain and subj.domain != domain:
             continue
         if source and subj.source != source:
-            continue
-        if subject and subject.lower() not in subj.name.lower() \
-                and subject != library.subject_key(subj.source, subj.source_id):
             continue
         if subj.items:
             out.append(subj)
     return out
 
 
+def _settings(subj: Subject, cfg: dict) -> dict:
+    """The settings config.toml gives ``subj`` in ``[subjects."<key>"]``; {} if none."""
+    return cfg.get("subjects", {}).get(subj.key, {})
+
+
 def _weight(subj: Subject, cfg: dict) -> float:
-    settings = cfg.get("subjects", {}).get(
-        library.subject_key(subj.source, subj.source_id), {})
-    base = settings.get("weight", 1.0)
+    base = _settings(subj, cfg).get("weight", 1.0)
     # "quote" weighting makes every stored quote equally likely, so prolific
     # subjects dominate; "subject" (the default) gives each subject equal say.
     return base * len(subj.items) if cfg["weighting"] == "quote" else base

@@ -2,7 +2,7 @@
 
 import re
 
-from .base import Candidate, Item, Source, SourceError, Subject, get
+from .base import Candidate, Client, Item, SourceError, Subject, hyprmuse_user_agent
 
 # Headings of sections that hold words other than the subject's own, grouped
 # by edition and matched against the heading's plain text, ignoring case.
@@ -322,14 +322,18 @@ class Wikiquote:
     domain = "quotations"
     produces_atomic = True
 
+    def __init__(self, client: Client):
+        """``client`` makes every request this source sends."""
+        self._client = client
+
     def _api(self, lang: str) -> str:
         return f"https://{lang}.wikiquote.org/w/api.php"
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
-        resp = get(self._api(lang), params={
+        resp = self._client.get(self._api(lang), params={
             "action": "query", "list": "search", "srsearch": query,
             "format": "json", "srlimit": 8,
-        }, key="wikiquote", throttle=0.2)
+        })
         out = []
         for hit in resp.json().get("query", {}).get("search", []):
             title = hit["title"]
@@ -345,9 +349,9 @@ class Wikiquote:
         url = f"https://{lang}.wikiquote.org/wiki/{title.replace(' ', '_')}"
         if progress:
             progress(f"parsing {title} ({lang}.wikiquote.org)")
-        resp = get(self._api(lang), params={
+        resp = self._client.get(self._api(lang), params={
             "action": "parse", "page": title, "prop": "wikitext", "format": "json",
-        }, key="wikiquote", throttle=0.2)
+        })
         data = resp.json()
         if "error" in data:
             raise SourceError(f"wikiquote: {data['error'].get('info', 'page not found')}")
@@ -362,4 +366,5 @@ class Wikiquote:
         )
 
 
-SOURCE = Wikiquote()
+# Wikimedia asks bots to identify themselves; see hyprmuse_user_agent.
+SOURCE = Wikiquote(Client(gap=0.2, user_agent=hyprmuse_user_agent()))

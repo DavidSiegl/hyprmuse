@@ -8,12 +8,8 @@ None recorded yet.
 
 - **`quote`'s `--lines`, `--width`, `--max-lines` and `--max-chars` skip `config.LEAST`.**
   `cmd_quote` copies them into `cfg` after `load_config` has checked the file, so
-  `--lines 0` still prints "No quotes stored yet" and a negative width reaches the
+  `--lines 0` finds no quote even in a full library and a negative width reaches the
   wrapper. argparse could check them against `config.LEAST`. Found in review 16.
-- **Each source's HTTP politeness is spread over its call sites.** Now
-  [#7](https://github.com/DavidSiegl/hyprmuse/issues/7).
-- **Two rules decide which stored subject a token means.** Now
-  [#8](https://github.com/DavidSiegl/hyprmuse/issues/8).
 - **Neither `publish.sh` has a committed test.** Review 08, F6: "the bare-repository
   acceptance is not committed or run anywhere"; a wrong branch choice (review 08, F1)
   went unnoticed for that reason. `packaging/aur/publish.sh` was checked by hand against a
@@ -50,3 +46,9 @@ None recorded yet.
   `** Źródło: …` and `** Zobacz też: …` under a quote; when a quote has no `Źródło`,
   `wikiquote._read_bullet` takes the first sub-bullet, so `--note` shows "Zobacz też:
   …". Closed by skipping sub-bullets that only link related pages.
+- **Names without a hash are moved only when their subject is next saved or removed.**
+  Review 18, F4: "compatibility is attached to `save` and `remove` rather than done once",
+  so `library._unhashed_file` stays in both paths, and any new write or delete path must
+  remember it. Kept because a migration on load would make `hyprmuse quote`, which only
+  reads, write to the library. Closed by a one-off migration that `add`, `update` and
+  `remove` run before touching the store, after which `_unhashed_file` serves only it.
