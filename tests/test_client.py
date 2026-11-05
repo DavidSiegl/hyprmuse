@@ -1,7 +1,10 @@
-"""base: the Client's request spacing and error reporting, its User-Agent, and parse_html."""
+"""base: the Client's request spacing and errors, its User-Agent, and parse_html."""
+
+from collections import defaultdict
 
 import pytest
 import requests
+from bs4.builder import HTMLParserTreeBuilder, builder_registry
 
 from hyprmuse.sources import REGISTRY, base
 from hyprmuse.sources.base import Client, NotFound, SourceError
@@ -143,7 +146,17 @@ def test_hyprmuse_agent_without_package_metadata(monkeypatch):
     assert base.hyprmuse_user_agent() == "hyprmuse (https://github.com/DavidSiegl/hyprmuse)"
 
 
-def test_parse_html_uses_html_parser_even_with_lxml_installed():
-    # bs4 prefers lxml whenever it is importable, as it is in a venv left over
-    # from before lxml was dropped; parse_html must not follow it.
+def test_parse_html_uses_html_parser_when_bs4_prefers_another(monkeypatch):
+    # lxml, once installed, registers itself as bs4's default HTML builder; this
+    # stands in for it, so the test can fail in a venv without lxml.
+    class Preferred(HTMLParserTreeBuilder):
+        NAME = "preferred"
+        features = ("preferred", "html", "fast")
+
+    monkeypatch.setattr(builder_registry, "builders", list(builder_registry.builders))
+    monkeypatch.setattr(builder_registry, "builders_for_feature",
+                        defaultdict(list, {k: list(v) for k, v in builder_registry.builders_for_feature.items()}))
+    builder_registry.register(Preferred)
+    assert builder_registry.lookup("html", "fast") is Preferred  # what BeautifulSoup(html) uses
+
     assert base.parse_html("<p>x</p>").builder.NAME == "html.parser"

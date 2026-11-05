@@ -37,10 +37,10 @@ def hyprmuse_user_agent() -> str:
 def parse_html(html: str) -> BeautifulSoup:
     """Parse a scraped page into a BeautifulSoup tree.
 
-    Every source that scrapes HTML parses it here, so that all of them use
-    Python's own html.parser and none brings lxml back into the binary;
-    packaging/licenses/README.md says why lxml is out. Never raises on
-    malformed markup: html.parser repairs what it can and keeps the rest as text.
+    Every source that scrapes HTML parses it here, with Python's own
+    html.parser, even where bs4 would pick lxml; packaging/licenses/README.md
+    says why lxml is out. Malformed markup is repaired, not refused, as far as
+    html.parser can; what it cannot parse raises bs4.ParserRejectedMarkup.
     """
     return BeautifulSoup(html, "html.parser")
 
