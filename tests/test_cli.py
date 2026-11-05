@@ -358,7 +358,7 @@ def test_quote_and_list_skip_a_subject_file_of_the_wrong_shape(capsys):
 def by_key(monkeypatch):
     """Genius and Wikiquote stand-ins that record what add asks of them.
 
-    Returns a list of ("search", query) and ("fetch", source, source_id) calls.
+    Returns a list of ("search", query, lang) and ("fetch", source, source_id) calls.
     """
     from hyprmuse import sources
     from hyprmuse.sources.base import Candidate
@@ -369,7 +369,7 @@ def by_key(monkeypatch):
             self.name = name
 
         def search(self, query, lang):
-            calls.append(("search", query))
+            calls.append(("search", query, lang))
             return [Candidate(self.name, "found", "Found", "music")]
 
         def fetch(self, source_id, progress=None):
@@ -398,7 +398,19 @@ def test_add_splits_a_key_on_its_first_colon_only(capsys, by_key):
 def test_add_searches_a_query_that_is_not_a_key(capsys, by_key, query):
     code, _ = run(["add", query, "-y", "--source", "genius"], capsys)
     assert code == 0
-    assert by_key == [("search", query), ("fetch", "genius", "found")]
+    assert by_key == [("search", query, "en"), ("fetch", "genius", "found")]
+
+
+def test_add_refuses_a_lang_for_a_key(capsys, by_key):
+    """Review 24, F3: a key's id names its edition, so --lang cannot apply."""
+    code, out = run(["add", "wikiquote:en:Ingeborg Bachmann", "--lang", "de"], capsys)
+    assert code == 1 and by_key == []
+    assert "--lang" in out.err
+
+
+def test_search_without_lang_searches_the_english_edition(capsys, by_key):
+    run(["search", "Kafka", "--source", "wikiquote"], capsys)
+    assert by_key == [("search", "Kafka", "en")]
 
 
 def test_add_refuses_a_key_from_another_source_than_source_names(capsys, by_key):
@@ -414,7 +426,7 @@ def test_add_fails_on_a_key_its_source_cannot_fetch(capsys, monkeypatch, by_key)
         name = "genius"
 
         def search(self, query, lang):
-            by_key.append(("search", query))
+            by_key.append(("search", query, lang))
             return []
 
         def fetch(self, source_id, progress=None):

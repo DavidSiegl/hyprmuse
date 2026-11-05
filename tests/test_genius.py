@@ -211,16 +211,19 @@ def test_fetch_fails_when_a_song_request_fails(fake_client, fake_response):
         genius.Genius(client).fetch("7")
 
 
-def endless_catalogue(fake_client, fake_response, per_page, pages):
+def endless_catalogue(fake_client, fake_response, per_page, pages, guest=False):
     """Routes for an artist whose every song-list page names a next one.
 
-    Page n holds songs "s<n>-1" .. "s<n>-<per_page>", each with lyrics.
+    Page n holds songs "s<n>-1" .. "s<n>-<per_page>", each with lyrics; with
+    ``guest``, the artist is only featured on them, never their primary artist.
     """
     routes = {}
+    primary = {"artist_id": 99, "artist": "Someone Else"} if guest else {}
     for n in range(1, pages + 1):
         titles = [f"s{n}-{i}" for i in range(1, per_page + 1)]
         routes[songs_url(fake_client, n)] = fake_response(
-            {"response": {"next_page": n + 1, "songs": [song(t) for t in titles]}})
+            {"response": {"next_page": n + 1,
+                          "songs": [song(t, **primary) for t in titles]}})
         for t in titles:
             routes[f"https://genius.com/{t}"] = fake_response(text=PAGE)
     return fake_client(routes)
@@ -242,6 +245,18 @@ def test_fetch_stops_listing_songs_at_the_limit(fake_client, fake_response, monk
     assert listed == [songs_url(fake_client, 1), songs_url(fake_client, 2)]
     assert [i.work for i in subject.items] == kept
     assert "kept the 4 most popular of more songs" in said
+
+
+def test_fetch_counts_guest_appearances_towards_the_limit(fake_client, fake_response,
+                                                         monkeypatch):
+    """Review 24, F1: songs where the artist is only featured are skipped, but
+    listing them costs requests all the same, so they must count."""
+    monkeypatch.setattr(genius, "MAX_SONGS", 4)
+    client = endless_catalogue(fake_client, fake_response, per_page=2, pages=10, guest=True)
+    with pytest.raises(SourceError, match="no lyrics harvested"):
+        genius.Genius(client).fetch("7")
+    listed = [u for u in client.requested if "/songs?" in u]
+    assert listed == [songs_url(fake_client, 1), songs_url(fake_client, 2)]
 
 
 def test_fetch_takes_every_song_of_an_artist_up_to_the_limit(fake_client, fake_response,

@@ -8,10 +8,12 @@ from .base import Candidate, Client, Item, NotFound, SourceError, Subject, parse
 
 API = "https://genius.com/api"
 
-# Most songs one harvest takes, the most popular first. Without a bound, a wrong
-# match with ~23,000 songs paged the song list for half an hour until Genius
-# answered HTTP 403 and blocked the machine (#43); the largest artist in the
-# author's library has 164 songs. 300 is 15 song-list pages of 20.
+# Most entries of an artist's song list one harvest reads, the most popular
+# first; the artist's own songs among them are harvested. Without a bound, a
+# wrong match with ~23,000 songs paged the song list for half an hour until
+# Genius answered HTTP 403 and blocked the machine (#43). Songs the artist is
+# only featured on count too, since listing them costs requests all the same.
+# The largest artist in the author's library has 164 songs; 300 is 15 pages of 20.
 MAX_SONGS = 300
 
 # Boilerplate Genius injects into the lyrics container.
@@ -117,6 +119,26 @@ def lyrics_text(html: str) -> str | None:
     return "\n\n".join(chunks).strip()
 
 
+def _own_songs(listed: list[dict], artist_id: str) -> tuple[dict, list[dict]]:
+    """The artist's record and their own songs ({"title", "url"} each) among
+    ``listed``, entries as ``Genius._song_page`` returns them, in their order.
+
+    An entry whose primary artist is someone else is a guest appearance and is
+    left out; one with no primary artist id is kept. The record is that of the
+    first entry with the artist's id, {} when there is none.
+    """
+    artist: dict = {}
+    songs = []
+    for entry in listed:
+        primary = entry["primary_artist"]
+        if primary.get("id") and str(primary["id"]) != str(artist_id):
+            continue
+        if primary.get("id") and not artist:
+            artist = {"name": primary.get("name", ""), "url": primary.get("url", "")}
+        songs.append({"title": entry["title"], "url": entry["url"]})
+    return artist, songs
+
+
 class Genius:
     name = "genius"
     domain = "music"
@@ -148,50 +170,42 @@ class Genius:
         return hits
 
     def _songs(self, artist_id: str, progress=None) -> tuple[dict, list[dict]]:
-        """The artist's own record and their MAX_SONGS most popular songs.
+        """The artist's own record and their songs among the MAX_SONGS most
+        popular entries of their song list.
 
         The artist record ({"name", "url"}) is read off the songs, so it is
         empty when the artist is not the primary artist of any song. When the
         limit cuts the list short, ``progress`` is told so.
         """
-        artist: dict = {}
-        songs: list[dict] = []
+        listed: list[dict] = []
         page: int | None = 1
-        while page and len(songs) < MAX_SONGS:
+        while page and len(listed) < MAX_SONGS:
             if progress:
-                progress(f"song list page {page} ({len(songs)} so far)")
-            found, own, page = self._song_page(artist_id, page)
-            artist = artist or found
-            songs += own
-        if page or len(songs) > MAX_SONGS:
-            songs = songs[:MAX_SONGS]
+                progress(f"song list page {page} ({len(listed)} listed so far)")
+            entries, page = self._song_page(artist_id, page)
+            listed += entries
+        if page or len(listed) > MAX_SONGS:
+            listed = listed[:MAX_SONGS]
             if progress:
                 progress(f"kept the {MAX_SONGS} most popular of more songs")
-        return artist, songs
+        return _own_songs(listed, artist_id)
 
-    def _song_page(self, artist_id: str, page: int) -> tuple[dict, list[dict], int | None]:
+    def _song_page(self, artist_id: str, page: int) -> tuple[list[dict], int | None]:
         """Page ``page`` (from 1) of the artist's song list, most popular first.
 
-        Returns the artist's record as on ``_songs``, the page's songs whose
-        primary artist is the artist ({"title", "url"} each), and the number of
-        the next page, None after the last one.
+        Returns the page's entries, guest appearances included, each as
+        {"title", "url", "primary_artist"} with Genius's primary_artist record
+        ({} when Genius gave none), and the number of the next page, None after
+        the last one.
         """
-        artist: dict = {}
-        songs = []
         api_url = f"{API}/artists/{artist_id}/songs"
         resp = self._client.get(api_url, params={"page": page, "sort": "popularity"})
         with reading(self.name, api_url):
             response = resp.json().get("response", {})
-            for song in response.get("songs", []):
-                # Skip entries where this artist is only a featured guest.
-                primary = song.get("primary_artist", {})
-                if primary.get("id") and str(primary["id"]) != str(artist_id):
-                    continue
-                if primary.get("id") and not artist:
-                    artist = {"name": primary.get("name", ""),
-                              "url": primary.get("url", "")}
-                songs.append({"title": song["title"], "url": song["url"]})
-            return artist, songs, response.get("next_page")
+            entries = [{"title": song["title"], "url": song["url"],
+                        "primary_artist": song.get("primary_artist", {})}
+                       for song in response.get("songs", [])]
+            return entries, response.get("next_page")
 
     def _lyrics(self, url: str) -> str | None:
         """The lyrics on the song page at ``url``; None when it has none.
