@@ -4,7 +4,7 @@ import pytest
 import requests
 
 from hyprmuse.sources import REGISTRY, base
-from hyprmuse.sources.base import Client, SourceError
+from hyprmuse.sources.base import Client, NotFound, SourceError
 
 
 class Clock:
@@ -98,8 +98,9 @@ def test_jitter_draws_up_to_its_bound_and_adds_it_to_the_gap(monkeypatch, clock)
 def test_a_failed_request_still_counts_for_the_gap(monkeypatch, clock):
     client = Client(gap=5.0)
     respond(monkeypatch, error=requests.ConnectionError("down"))
-    with pytest.raises(SourceError, match="request to https://example.org failed"):
+    with pytest.raises(SourceError, match="request to https://example.org failed") as err:
         client.get("https://example.org")
+    assert not isinstance(err.value, NotFound)
     respond(monkeypatch)
     client.get("https://example.org")
     assert clock.slept == [pytest.approx(5.0)]
@@ -107,7 +108,14 @@ def test_a_failed_request_still_counts_for_the_gap(monkeypatch, clock):
 
 def test_non_200_is_a_source_error(monkeypatch, clock):
     respond(monkeypatch, http_status=429)
-    with pytest.raises(SourceError, match="HTTP 429"):
+    with pytest.raises(SourceError, match="HTTP 429") as err:
+        Client().get("https://example.org")
+    assert not isinstance(err.value, NotFound)
+
+
+def test_404_is_not_found(monkeypatch, clock):
+    respond(monkeypatch, http_status=404)
+    with pytest.raises(NotFound, match="HTTP 404"):
         Client().get("https://example.org")
 
 
