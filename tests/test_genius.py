@@ -197,16 +197,14 @@ def test_fetch_skips_a_song_genius_has_no_page_for(fake_client, fake_response):
     assert [i.work for i in subject.items] == ["kept"]
 
 
-@pytest.mark.parametrize("failure", [
-    SourceError("https://genius.com/first returned HTTP 429"),
-    SourceError("request to https://genius.com/first failed: connection reset"),
-])
-def test_fetch_fails_when_a_song_request_fails(fake_client, fake_response, failure):
+def test_fetch_fails_when_a_song_request_fails(fake_client, fake_response):
     """A partial harvest would replace the stored subject with fewer songs (#12)."""
     client = fake_client({
         songs_url(fake_client, 1): fake_response(
             {"response": {"next_page": None, "songs": [song("first"), song("second")]}}),
-        "https://genius.com/first": failure,
+        # Client.get raises a SourceError that is not NotFound for a 429, a
+        # 5xx or a dropped connection alike (tests/test_client.py).
+        "https://genius.com/first": SourceError("https://genius.com/first returned HTTP 429"),
         "https://genius.com/second": fake_response(text=PAGE),
     })
     with pytest.raises(SourceError, match="genius.com/first"):

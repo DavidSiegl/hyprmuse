@@ -202,12 +202,10 @@ def test_update_keeps_the_stored_subject_when_genius_is_rate_limited(capsys, mon
     """Regression (#12): a re-harvest that lost songs to a 429 replaced the full one."""
     from hyprmuse import sources
     from hyprmuse.sources import genius
-    songs = [{"title": t, "url": f"https://genius.com/{t}",
-              "primary_artist": {"id": 7, "name": "Element of Crime", "url": ""}}
-             for t in ("first", "second")]
+    from tests.test_genius import song, songs_url
     client = fake_client({
-        fake_client.url(f"{genius.API}/artists/7/songs", {"page": 1, "sort": "popularity"}):
-        fake_response({"response": {"next_page": None, "songs": songs}}),
+        songs_url(fake_client, 1): fake_response(
+            {"response": {"next_page": None, "songs": [song("first"), song("second")]}}),
         "https://genius.com/first": fake_response(
             text='<div data-lyrics-container="true">Still here</div>'),
         "https://genius.com/second": SourceError("https://genius.com/second returned HTTP 429"),

@@ -98,8 +98,9 @@ def test_jitter_draws_up_to_its_bound_and_adds_it_to_the_gap(monkeypatch, clock)
 def test_a_failed_request_still_counts_for_the_gap(monkeypatch, clock):
     client = Client(gap=5.0)
     respond(monkeypatch, error=requests.ConnectionError("down"))
-    with pytest.raises(SourceError, match="request to https://example.org failed"):
+    with pytest.raises(SourceError, match="request to https://example.org failed") as err:
         client.get("https://example.org")
+    assert not isinstance(err.value, NotFound)
     respond(monkeypatch)
     client.get("https://example.org")
     assert clock.slept == [pytest.approx(5.0)]
