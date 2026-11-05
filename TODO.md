@@ -6,6 +6,10 @@ None recorded yet.
 
 ## Open issues
 
+- **`quote`'s `--lines`, `--width`, `--max-lines` and `--max-chars` skip `config.LEAST`.**
+  `cmd_quote` copies them into `cfg` after `load_config` has checked the file, so
+  `--lines 0` still prints "No quotes stored yet" and a negative width reaches the
+  wrapper. argparse could check them against `config.LEAST`. Found in review 16.
 - **Each source's HTTP politeness is spread over its call sites.** Now
   [#7](https://github.com/DavidSiegl/hyprmuse/issues/7).
 - **Two rules decide which stored subject a token means.** Now
