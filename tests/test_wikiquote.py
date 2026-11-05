@@ -26,6 +26,15 @@ def test_strip_markup_handles_nested_templates():
     assert wq.strip_markup("a {{outer {{inner}} }} b").strip() == "a b"
 
 
+def test_strip_markup_removes_templates_nested_four_deep():
+    """Review 19, F7: as deep as a quote template's own scanner reads."""
+    assert wq.strip_markup("a {{1 {{2 {{3 {{4}} }} }} }} b") == "a b"
+
+
+def test_strip_markup_keeps_an_unclosed_template_as_text():
+    assert wq.strip_markup("a {{open {{done}} b") == "a {{open b"
+
+
 @pytest.mark.parametrize("raw,quote,note", [
     ('"Ein Zitat" - Quelle 1978', "Ein Zitat", "Quelle 1978"),
     ('"Nur das Zitat"', "Nur das Zitat", ""),
@@ -221,9 +230,93 @@ def test_quotes_of_exactly_15_and_400_characters_are_kept():
     assert [len(q) for q, _ in quotes(text, "X")] == [15, 400]
 
 
-def test_an_unclosed_quote_template_ends_the_page():
+def test_an_unclosed_quote_template_runs_to_the_end_of_its_paragraph():
     text = "== Цитаты ==\n{{Q|Цитата, у которой нет конца шаблона\n* not read as a bullet\n"
     assert quotes(text, "X") == [("Цитата, у которой нет конца шаблона * not read as a bullet", "")]
+
+
+def test_french_about_heading_with_elided_de_is_skipped():
+    """Review 19, F1: "À propos d'Einstein", with no space after d', is usual."""
+    text = ("== Citations ==\n* Une citation d’Einstein assez longue.\n"
+            "== À propos d'Einstein ==\n* Quelqu’un d’autre parle de lui.\n"
+            "== À propos d’Albert Einstein ==\n* Encore quelqu’un d’autre.\n")
+    assert [q for q, _ in quotes(text, "Albert Einstein")] == [
+        "Une citation d’Einstein assez longue."]
+
+
+@pytest.mark.parametrize("heading", [
+    "Notes on Nursing (1859)", "Notes from Underground", "Sources of Power",
+    "Literatur und Kunst", "Литература и искусство", "Ссылки на прошлое",
+])
+def test_a_bibliography_word_heads_a_section_of_their_own_words(heading):
+    """Review 19, F2: such a word marks bibliography only as the whole heading."""
+    text = f"== {heading} ==\n* Words this subject did write themselves.\n"
+    assert len(quotes(text, "X")) == 1
+
+
+@pytest.mark.parametrize("heading", [
+    "Notes", "Sources", "Literatur", "Литература", "Ссылки", "Bibliography",
+    "Bibliografía", "Библиография", "Note",
+])
+def test_a_bibliography_heading_is_skipped(heading):
+    text = f"== {heading} ==\n* A book title that is long enough to keep\n"
+    assert quotes(text, "X") == []
+
+
+@pytest.mark.parametrize("raw", [
+    "«Libertad» es la palabra que más amo en el mundo.",
+    '"Freedom" is the word I love most in the world.',
+])
+def test_a_quote_that_only_begins_with_a_quoted_word_is_kept_whole(raw):
+    """Review 19, F3: a quoted word that opens a sentence is no quote of its own."""
+    assert wq._split_quote_and_note(raw) == (raw, "")
+
+
+@pytest.mark.parametrize("heading,title", [
+    ("Über Marxismus", "Karl Marx"),
+    ("О марксизме", "Карл Маркс"),
+    ("Über Albert Schweitzer", "Albert Einstein"),
+])
+def test_about_a_topic_spelt_like_the_name_holds_their_words(heading, title):
+    """Review 19, F4: only the surname, inflected, names the subject."""
+    text = f"== {heading} ==\n* Words this subject did write on the topic.\n"
+    assert len(quotes(text, title)) == 1
+
+
+def test_an_unclosed_quote_template_ends_at_the_next_heading():
+    """Review 19, F5: one stray {{Q| must not swallow the rest of the page."""
+    text = ("== Цитаты ==\n{{Q|Цитата без конца шаблона\n"
+            "== Ещё ==\n{{Q|Следующая цитата, которая закрыта.}}\n"
+            "* A bullet after it that is long enough\n")
+    assert [q for q, _ in quotes(text, "X")][-2:] == [
+        "Следующая цитата, которая закрыта.", "A bullet after it that is long enough"]
+
+
+@pytest.mark.parametrize("heading,title", [
+    ("Citazioni errate", "Albert Einstein"), ("Цитаты об Эйнштейне", "Альберт Эйнштейн"),
+    ("Cytaty o Einsteinie", "Albert Einstein"), ("Disputed", "Albert Einstein"),
+    ("Disputadas", "Albert Einstein"), ("Zitate mit Bezug auf Albert Einstein", "Albert Einstein"),
+])
+def test_more_sections_not_by_the_subject_are_skipped(heading, title):
+    """Review 19, F6."""
+    text = f"== {heading} ==\n* Words this subject never said at all\n"
+    assert quotes(text, title) == []
+
+
+def test_the_surname_is_read_from_a_title_without_its_disambiguation():
+    text = ("== Quotes ==\n* Words of her own that are long enough\n"
+            "== About Lovelace ==\n* What someone else said of her\n")
+    assert len(quotes(text, "Ada Lovelace (mathematician)")) == 1
+
+
+def test_an_unclosed_quote_template_ends_at_a_blank_line():
+    text = "{{Q|Цитата без конца шаблона\n\n* A bullet after the blank line, long enough\n"
+    assert [q for q, _ in quotes(text, "X")] == [
+        "Цитата без конца шаблона", "A bullet after the blank line, long enough"]
+
+
+def test_strip_markup_removes_adjacent_templates():
+    assert wq.strip_markup("a{{x}}{{y}}b") == "ab"
 
 
 def test_fetch_raises_on_api_error(monkeypatch, fake_response):
