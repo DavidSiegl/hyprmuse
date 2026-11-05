@@ -18,7 +18,7 @@ the lockscreen never waits on the network.
 | Source | Domain | Covers | Licence |
 |---|---|---|---|
 | `wikiquote` | quotations | authors, philosophers, scientists, films, TV, proverbs — editions `en`, `de`, `fr`, `es`, `it`, `pt`, `pl`, `ru`, `nl` | CC BY-SA |
-| `genius` | music | song lyrics for any artist | scraped, personal use |
+| `genius` | music | lyrics of an artist's 300 most popular songs | scraped, personal use |
 | `poetrydb` | poetry | ~130 classic poets, full poems | public domain |
 | `gutenberg` | prose | passages from public-domain books | public domain |
 

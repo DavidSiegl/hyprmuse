@@ -209,3 +209,53 @@ def test_fetch_fails_when_a_song_request_fails(fake_client, fake_response):
     })
     with pytest.raises(SourceError, match="genius.com/first"):
         genius.Genius(client).fetch("7")
+
+
+def endless_catalogue(fake_client, fake_response, per_page, pages):
+    """Routes for an artist whose every song-list page names a next one.
+
+    Page n holds songs "s<n>-1" .. "s<n>-<per_page>", each with lyrics.
+    """
+    routes = {}
+    for n in range(1, pages + 1):
+        titles = [f"s{n}-{i}" for i in range(1, per_page + 1)]
+        routes[songs_url(fake_client, n)] = fake_response(
+            {"response": {"next_page": n + 1, "songs": [song(t) for t in titles]}})
+        for t in titles:
+            routes[f"https://genius.com/{t}"] = fake_response(text=PAGE)
+    return fake_client(routes)
+
+
+@pytest.mark.parametrize(("per_page", "kept"), [
+    (3, ["s1-1", "s1-2", "s1-3", "s2-1"]),  # the limit falls inside page 2
+    (2, ["s1-1", "s1-2", "s2-1", "s2-2"]),  # page 2 ends on the limit
+])
+def test_fetch_stops_listing_songs_at_the_limit(fake_client, fake_response, monkeypatch,
+                                                per_page, kept):
+    """Regression: a wrong match with ~23,000 songs paged the list until Genius
+    answered 403 and blocked the machine."""
+    monkeypatch.setattr(genius, "MAX_SONGS", 4)
+    client = endless_catalogue(fake_client, fake_response, per_page=per_page, pages=10)
+    said = []
+    subject = genius.Genius(client).fetch("7", said.append)
+    listed = [u for u in client.requested if "/songs?" in u]
+    assert listed == [songs_url(fake_client, 1), songs_url(fake_client, 2)]
+    assert [i.work for i in subject.items] == kept
+    assert "kept the 4 most popular of more songs" in said
+
+
+def test_fetch_takes_every_song_of_an_artist_up_to_the_limit(fake_client, fake_response,
+                                                             monkeypatch):
+    monkeypatch.setattr(genius, "MAX_SONGS", 4)
+    client = fake_client({
+        songs_url(fake_client, 1): fake_response(
+            {"response": {"next_page": 2, "songs": [song("first"), song("second")]}}),
+        songs_url(fake_client, 2): fake_response(
+            {"response": {"next_page": None, "songs": [song("third"), song("fourth")]}}),
+        **{f"https://genius.com/{t}": fake_response(text=PAGE)
+           for t in ("first", "second", "third", "fourth")},
+    })
+    said = []
+    subject = genius.Genius(client).fetch("7", said.append)
+    assert [i.work for i in subject.items] == ["first", "second", "third", "fourth"]
+    assert not any(m.startswith("kept") for m in said)

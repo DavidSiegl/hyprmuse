@@ -8,6 +8,12 @@ from .base import Candidate, Client, Item, NotFound, SourceError, Subject, parse
 
 API = "https://genius.com/api"
 
+# Most songs one harvest takes, the most popular first. Without a bound, a wrong
+# match with ~23,000 songs paged the song list for half an hour until Genius
+# answered HTTP 403 and blocked the machine (#43); the largest artist in the
+# author's library has 164 songs. 300 is 15 song-list pages of 20.
+MAX_SONGS = 300
+
 # Boilerplate Genius injects into the lyrics container.
 _HEADER_LYRICS = re.compile(r"\s+lyrics$", re.IGNORECASE)
 _CONTRIBUTORS = re.compile(r"^\d*\s*contributors?\b", re.IGNORECASE)
@@ -142,31 +148,50 @@ class Genius:
         return hits
 
     def _songs(self, artist_id: str, progress=None) -> tuple[dict, list[dict]]:
-        """The artist's own record and their songs, most popular first.
+        """The artist's own record and their MAX_SONGS most popular songs.
 
         The artist record ({"name", "url"}) is read off the songs, so it is
-        empty when the artist is not the primary artist of any song.
+        empty when the artist is not the primary artist of any song. When the
+        limit cuts the list short, ``progress`` is told so.
         """
         artist: dict = {}
-        songs, page = [], 1
-        while page:
+        songs: list[dict] = []
+        page: int | None = 1
+        while page and len(songs) < MAX_SONGS:
             if progress:
                 progress(f"song list page {page} ({len(songs)} so far)")
-            api_url = f"{API}/artists/{artist_id}/songs"
-            resp = self._client.get(api_url, params={"page": page, "sort": "popularity"})
-            with reading(self.name, api_url):
-                response = resp.json().get("response", {})
-                for song in response.get("songs", []):
-                    # Skip entries where this artist is only a featured guest.
-                    primary = song.get("primary_artist", {})
-                    if primary.get("id") and str(primary["id"]) != str(artist_id):
-                        continue
-                    if primary.get("id") and not artist:
-                        artist = {"name": primary.get("name", ""),
-                                  "url": primary.get("url", "")}
-                    songs.append({"title": song["title"], "url": song["url"]})
-                page = response.get("next_page")
+            found, own, page = self._song_page(artist_id, page)
+            artist = artist or found
+            songs += own
+        if page or len(songs) > MAX_SONGS:
+            songs = songs[:MAX_SONGS]
+            if progress:
+                progress(f"kept the {MAX_SONGS} most popular of more songs")
         return artist, songs
+
+    def _song_page(self, artist_id: str, page: int) -> tuple[dict, list[dict], int | None]:
+        """Page ``page`` (from 1) of the artist's song list, most popular first.
+
+        Returns the artist's record as on ``_songs``, the page's songs whose
+        primary artist is the artist ({"title", "url"} each), and the number of
+        the next page, None after the last one.
+        """
+        artist: dict = {}
+        songs = []
+        api_url = f"{API}/artists/{artist_id}/songs"
+        resp = self._client.get(api_url, params={"page": page, "sort": "popularity"})
+        with reading(self.name, api_url):
+            response = resp.json().get("response", {})
+            for song in response.get("songs", []):
+                # Skip entries where this artist is only a featured guest.
+                primary = song.get("primary_artist", {})
+                if primary.get("id") and str(primary["id"]) != str(artist_id):
+                    continue
+                if primary.get("id") and not artist:
+                    artist = {"name": primary.get("name", ""),
+                              "url": primary.get("url", "")}
+                songs.append({"title": song["title"], "url": song["url"]})
+            return artist, songs, response.get("next_page")
 
     def _lyrics(self, url: str) -> str | None:
         """The lyrics on the song page at ``url``; None when it has none.
