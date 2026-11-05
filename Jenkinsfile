@@ -25,8 +25,8 @@ pipeline {
     }
 
     stages {
-        // The change this build judges, from GATE_BASE to HEAD. scripts/gate decides how much
-        // of it to run: a change to docs alone runs its linters and no tests.
+        // The change this build judges, from GATE_BASE to HEAD; scripts/gate decides how much
+        // of it to run.
         stage('Change') {
             steps {
                 script {
@@ -38,12 +38,24 @@ pipeline {
                             git merge-base HEAD "origin/$CHANGE_TARGET"
                         ''').trim()
                     } else {
-                        // A branch build: since the last successful build, or the last commit when
-                        // there is none or a force-push removed it.
+                        // A branch build: since the last successful build. With none, or a
+                        // force-push having removed it (a new job, or the gate newly added), it is
+                        // everything a release would ship: since the nearest v* release tag, else
+                        // since a commit of the empty tree, made here and never pushed, so a repo's
+                        // first release is judged whole, tests included.
                         def previous = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT
                         def kept = previous && sh(returnStatus: true,
                                                   script: 'git cat-file -e "$GIT_PREVIOUS_SUCCESSFUL_COMMIT^{commit}"') == 0
-                        base = kept ? previous : 'HEAD^1'
+                        base = kept ? previous : sh(returnStdout: true, script: '''
+                            git fetch --quiet --tags origin
+                            if released=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD 2>/dev/null); then
+                                git rev-parse "$released^{commit}"
+                            else
+                                empty=$(git hash-object -w -t tree /dev/null)
+                                git -c user.name=gate -c user.email=gate@localhost -c commit.gpgSign=false \\
+                                    commit-tree "$empty" -m empty </dev/null
+                            fi
+                        ''').trim()
                     }
                     // The base reaches the shell as an environment variable, never as Groovy-built
                     // shell code.
@@ -106,10 +118,10 @@ pipeline {
         // Releases a merge into main whose version has no release yet, packaging it first;
         // any other merge finds its release there and builds nothing (scripts/release due
         // and publish). scripts/package runs outside withCredentials, so no process above
-        // it holds the token; it can still reach publish's (scripts/release's header). gh creates the tag on GitHub, so Jenkins needs no git push
-        // credentials. The credential is bound on the agent that builds agents' pull
-        // requests: it must be a token the agents already hold (the agent-estate README,
-        // "Releases").
+        // it holds the token; it can still reach publish's (scripts/release's header). gh
+        // creates the tag on GitHub, so Jenkins needs no git push credentials. The
+        // credential is bound on the agent that builds agents' pull requests: it must be a
+        // token the agents already hold (the agent-estate README, "Releases").
         stage('Release') {
             when { branch 'main' }
             steps {
