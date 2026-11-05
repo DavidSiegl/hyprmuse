@@ -17,7 +17,7 @@ the lockscreen never waits on the network.
 
 | Source | Domain | Covers | Licence |
 |---|---|---|---|
-| `wikiquote` | quotations | authors, philosophers, scientists, films, TV, proverbs — any language edition | CC BY-SA |
+| `wikiquote` | quotations | authors, philosophers, scientists, films, TV, proverbs — editions `en`, `de`, `fr`, `es`, `it`, `pt`, `pl`, `ru`, `nl` | CC BY-SA |
 | `genius` | music | song lyrics for any artist | scraped, personal use |
 | `poetrydb` | poetry | ~130 classic poets, full poems | public domain |
 | `gutenberg` | prose | passages from public-domain books | public domain |
@@ -78,7 +78,10 @@ hyprmuse quote --source wikiquote --note
 hyprmuse quote --seed 42                # deterministic
 ```
 
-`--lang` selects the Wikiquote language edition (`de`, `en`, `fr`, …). Harvesting
+`--lang` selects the Wikiquote language edition: `en` (the default), `de`, `fr`, `es`,
+`it`, `pt`, `pl`, `ru` or `nl`. hyprmuse knows how each of these lays out its pages, so it
+keeps only the subject's own words and leaves out quotes about them or wrongly
+attributed to them; another edition may work, but may mix those in. Harvesting
 is throttled and cached; `add` is the slow step, `quote` reads only local files.
 
 ## Hyprlock integration
