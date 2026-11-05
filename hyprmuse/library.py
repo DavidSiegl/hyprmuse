@@ -37,29 +37,30 @@ def subject_path(source: str, source_id: str) -> Path:
     return config.SUBJECTS_DIR / f"{source}--{slugify(source_id)}-{digest}.json"
 
 
-def _drop_old_file(source: str, source_id: str) -> bool:
-    """Delete the subject's file from before 1.0, if one is stored.
+def _unhashed_file(source: str, source_id: str) -> Path | None:
+    """The subject's file under its name without a hash, if it holds this subject.
 
-    Releases before 1.0 saved a subject as ``<source>--<slug>.json``, a name
-    ids that slugify alike shared, so the file is deleted only if it holds
-    this very subject. Returns whether it was deleted.
+    Releases up to 0.3.2 saved a subject as ``<source>--<slug>.json``, a name
+    ids that slugify alike shared, so such a file is the subject's only if it
+    holds this very (source, source_id). None when there is no such file, or
+    it cannot be read.
     """
     path = config.SUBJECTS_DIR / f"{source}--{slugify(source_id)}.json"
     try:
         stored = json.loads(path.read_text(encoding="utf-8"))
-        if (stored["source"], stored["source_id"]) != (source, source_id):
-            return False
-        path.unlink()
+        if (stored["source"], stored["source_id"]) == (source, source_id):
+            return path
     except (OSError, ValueError, KeyError, TypeError):
-        return False
-    return True
+        pass
+    return None
 
 
 def save(subject: Subject) -> Path:
     """Write a subject to ``subject_path``, atomically so a crash cannot truncate it.
 
-    Replaces the subject's earlier file, including one under its name from
-    before 1.0. Returns the path written.
+    Replaces the subject's earlier file, including one under its name
+    without a hash (see ``_unhashed_file``). Returns the path written. Raises
+    OSError when the file cannot be written or the unhashed one moved.
     """
     config.SUBJECTS_DIR.mkdir(parents=True, exist_ok=True)
     path = subject_path(subject.source, subject.source_id)
@@ -83,11 +84,15 @@ def save(subject: Subject) -> Path:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, ensure_ascii=False, indent=2)
+        # Moving the unhashed file onto the new name first means a concurrent
+        # load_all sees the subject once at every moment, never twice or not at all.
+        unhashed = _unhashed_file(subject.source, subject.source_id)
+        if unhashed is not None:
+            os.replace(unhashed, path)
         os.replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
-    _drop_old_file(subject.source, subject.source_id)
     return path
 
 
@@ -135,13 +140,19 @@ def find(token: str) -> list[Subject]:
 
 
 def remove(subject: Subject) -> bool:
-    """Delete the subject's stored file; returns whether there was one.
+    """Delete the subject's stored files; returns whether there was one.
 
-    A file under its name from before 1.0 counts too.
+    A file under its name without a hash (see ``_unhashed_file``) counts too.
+    Raises OSError when a file that is there cannot be deleted.
     """
-    path = subject_path(subject.source, subject.source_id)
-    dropped_old = _drop_old_file(subject.source, subject.source_id)
-    if path.exists():
-        path.unlink()
-        return True
-    return dropped_old
+    removed = False
+    for path in (subject_path(subject.source, subject.source_id),
+                 _unhashed_file(subject.source, subject.source_id)):
+        if path is None:
+            continue
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        removed = True
+    return removed

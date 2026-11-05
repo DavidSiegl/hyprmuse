@@ -100,7 +100,7 @@ def test_ids_that_slugify_the_same_are_stored_apart():
 
 
 def store_under_old_name(subject):
-    """Save ``subject`` as hyprmuse before 1.0 did: <source>--<slug>.json."""
+    """Save ``subject`` as hyprmuse up to 0.3.2 did: <source>--<slug>.json."""
     path = library.save(subject)
     old = config.SUBJECTS_DIR / f"{subject.source}--{library.slugify(subject.source_id)}.json"
     path.rename(old)
@@ -127,7 +127,7 @@ def test_removing_a_subject_stored_under_its_old_name_deletes_it():
 
 
 def test_an_old_name_file_holding_another_subject_is_left_alone():
-    # Before 1.0 both ids below mapped to wikiquote--ru.json.
+    # Up to 0.3.2 both ids below mapped to wikiquote--ru.json.
     old = store_under_old_name(wikiquote("ru:Лев Толстой", "Лев Толстой"))
     dostoevsky = wikiquote("ru:Фёдор Достоевский", "Фёдор Достоевский")
     library.save(dostoevsky)
@@ -135,3 +135,33 @@ def test_an_old_name_file_holding_another_subject_is_left_alone():
     assert library.remove(dostoevsky) is False
     assert old.exists()
     assert [s.name for s in library.load_all()] == ["Лев Толстой"]
+
+
+def test_saving_a_subject_under_its_old_name_never_shows_it_twice(monkeypatch):
+    """After each rename save makes, load_all finds the subject exactly once."""
+    store_under_old_name(make_subject(name="Old Timer"))
+    seen = []
+    real_replace = library.os.replace
+
+    def replace(src, dst):
+        real_replace(src, dst)
+        seen.append([s.name for s in library.load_all()])
+
+    monkeypatch.setattr(library.os, "replace", replace)
+    library.save(make_subject(name="Old Timer"))
+    assert seen and all(names == ["Old Timer"] for names in seen)
+
+
+def test_an_old_name_file_that_cannot_be_deleted_fails_remove(monkeypatch):
+    subject = make_subject()
+    old = store_under_old_name(subject)
+    real_unlink = library.Path.unlink
+
+    def unlink(self, *args, **kwargs):
+        if self == old:
+            raise PermissionError(self)
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(library.Path, "unlink", unlink)
+    with pytest.raises(PermissionError):
+        library.remove(subject)
