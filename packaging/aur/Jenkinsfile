@@ -6,7 +6,8 @@
 // job, whose pull-request builds run their own Jenkinsfiles on the untrusted agent before
 // review. It needs:
 //   - "Pipeline script from SCM" on this repository, branch main only, script path
-//     packaging/aur/Jenkinsfile, so only reviewed code sees the key;
+//     packaging/aur/Jenkinsfile, so no pull-request build sees the key. What reaches main
+//     does, an agent's pull request that auto-merged included (TODO.md);
 //   - in its folder's credential store, an "SSH Username with private key" credential with
 //     ID aur-hyprmuse-bin, username aur, whose public key is on the AUR account;
 //   - a node labelled trusted that no agent-written build can reach (Job Restrictions), with

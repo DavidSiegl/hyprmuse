@@ -6,6 +6,11 @@ None recorded yet.
 
 ## Open issues
 
+- **`.copier-answers.yml` names an agent-estate commit that is not on its main.** `_commit:
+  4376091` is the tip of agent-estate's `automerge-octoflow-rule` branch (DavidSiegl/agent-estate#6).
+  If that pull request is squashed or rebased, or its branch deleted unmerged, the next
+  `copier update` cannot render the old version to diff against. Review 22, F6. Closed by
+  merging agent-estate#6 with a merge commit, which keeps 4376091 reachable from main.
 - **`quote`'s `--lines`, `--width`, `--max-lines` and `--max-chars` skip `config.LEAST`.**
   `cmd_quote` copies them into `cfg` after `load_config` has checked the file, so
   `--lines 0` finds no quote even in a full library and a negative width reaches the
@@ -25,6 +30,14 @@ None recorded yet.
   Jenkinsfile's trusted-node setup, triggers and options. Kept apart so each channel's job
   is set up and fails on its own. Closed by a shared lookup under `packaging/`, or by one
   job with a stage per channel, if a third channel comes.
+- **An agent's pull request can reach the PyPI token and the AUR key.** Auto-merge merges
+  a pull request whatever files it changes (owner, 2026-11-05: "do the same ruling like in
+  octoflow ai"), and the hyprmuse-pypi and hyprmuse-aur jobs run `packaging/pypi/` and
+  `packaging/aur/` from main on the trusted node with those secrets. So an agent's pull
+  request that edits them runs with the secrets once it merges. octoflow-ai has no such
+  jobs. Accepted by the owner on 2026-11-05 (review 22, F1). Closed by auto-merge holding
+  pull requests that change those two directories, or by the jobs reading their scripts
+  from a ref only a human can move.
 - **The agents' GitHub token can create releases and attach files to them.** Review 09,
   F1: "anyone who can create a release can publish". `packaging/pypi/publish.sh` no
   longer trusts release files: it builds the tag itself after checking that the tag is on

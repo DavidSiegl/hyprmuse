@@ -16,3 +16,6 @@ quality.md
 # What packaging/build-binary.sh writes
 build/
 dist/
+
+# Claude Code's personal instructions for this repo
+CLAUDE.local.md
