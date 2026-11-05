@@ -1,7 +1,8 @@
 """hyprmuse's own release rule: which paths `.release-exempt` lets change without a
 version raise, as `scripts/release changed` reads it. The script itself is the
 template's and tested there (agent-estate's tests/release_test.py); this pins the
-repo's list, so that widening a line (say `packaging/aur` for its PKGBUILD) fails here."""
+repo's list, so that widening a line (say `packaging/aur` for its PKGBUILD) fails
+here."""
 
 import shutil
 import subprocess
@@ -38,7 +39,7 @@ def changed(repo, path):
     target.write_text("x", encoding="utf-8")
     git(repo, "add", "--all")
     git(repo, "commit", "--quiet", "-m", path)
-    return subprocess.run(["sh", "scripts/release", "changed", "HEAD^"], cwd=repo,  # noqa: S603, S607
+    return subprocess.run(["sh", "scripts/release", "changed", "HEAD^"], cwd=repo,  # noqa: S607
                           check=False).returncode
 
 
