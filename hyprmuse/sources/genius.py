@@ -195,8 +195,10 @@ class Genius:
 
         Returns the page's entries, guest appearances included, each as
         {"title", "url", "primary_artist"} with Genius's primary_artist record
-        ({} when Genius gave none), and the number of the next page, None after
-        the last one.
+        ({} when an entry has no such key), and the number of the next page,
+        None after the last one. Raises SourceError when the request fails or
+        the reply is not shaped as expected, a primary_artist that is null or
+        not an object included.
         """
         api_url = f"{API}/artists/{artist_id}/songs"
         resp = self._client.get(api_url, params={"page": page, "sort": "popularity"})
