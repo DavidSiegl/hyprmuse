@@ -25,6 +25,14 @@ None recorded yet.
   Jenkinsfile's trusted-node setup, triggers and options. Kept apart so each channel's job
   is set up and fails on its own. Closed by a shared lookup under `packaging/`, or by one
   job with a stage per channel, if a third channel comes.
+- **An agent's pull request can reach the PyPI token and the AUR key.** Auto-merge merges
+  a pull request whatever files it changes (owner, 2026-11-05: "do the same ruling like in
+  octoflow ai"), and the hyprmuse-pypi and hyprmuse-aur jobs run `packaging/pypi/` and
+  `packaging/aur/` from main on the trusted node with those secrets. So an agent's pull
+  request that edits them runs with the secrets once it merges. octoflow-ai has no such
+  jobs. Accepted by the owner on 2026-11-05 (review 22, F1). Closed by auto-merge holding
+  pull requests that change those two directories, or by the jobs reading their scripts
+  from a ref only a human can move.
 - **The agents' GitHub token can create releases and attach files to them.** Review 09,
   F1: "anyone who can create a release can publish". `packaging/pypi/publish.sh` no
   longer trusts release files: it builds the tag itself after checking that the tag is on

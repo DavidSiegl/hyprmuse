@@ -5,7 +5,8 @@
 // job, whose pull-request builds run their own Jenkinsfiles on the untrusted agent before
 // review. It needs:
 //   - "Pipeline script from SCM" on this repository, branch main only, script path
-//     packaging/pypi/Jenkinsfile, so only reviewed code sees the token;
+//     packaging/pypi/Jenkinsfile, so no pull-request build sees the token. What reaches main
+//     does, an agent's pull request that auto-merged included (TODO.md);
 //   - in its folder's credential store, a "Secret text" credential with ID pypi-hyprmuse,
 //     a PyPI API token (account-wide for the first upload, then scoped to the project);
 //   - a node labelled trusted that no agent-written build can reach (Job Restrictions), with

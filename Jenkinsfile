@@ -76,8 +76,8 @@ pipeline {
         // release releases it; any other merge finds that release already there, so a change
         // goes out with the next raise, and one that lowers the version fails the build
         // rather than replace what releases/latest serves. No check forces a pull request
-        // to raise it, as octoflow-ai's Version stage does: a change to pyproject.toml holds
-        // a pull request for a human (automerge.yml), so that would hold every code change.
+        // to raise it, as octoflow-ai's Version stage does. An agent's pull request that
+        // raises it is released, to GitHub, PyPI and the AUR, with no human (automerge.yml).
         // gh creates the tag v<version> on GitHub at the commit built, so Jenkins needs no
         // git push credentials.
         stage('Release') {

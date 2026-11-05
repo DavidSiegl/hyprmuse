@@ -1,17 +1,22 @@
 # Merges a pull request into main, with a merge commit, once the quality gate has passed
 # on its head commit, so a pull request lands without a human. Any file may change, as in
-# octoflow-ai's auto-merge (decided by the owner on 2026-11-05): CI judges a pull request
-# by its own copy of the files that configure it (CI's files, conftest.py, pytest's,
-# coverage's and ruff's configuration, uv.lock), so an agent's pull request is trusted
-# not to loosen its own check. Held for a human: drafts, and pull requests labelled
-# no-automerge, from forks, or into another branch.
+# octoflow-ai's auto-merge (decided by the owner on 2026-11-05). So an agent's pull request
+# is trusted not to loosen its own check, which CI runs from the pull request's own copy of
+# the files that configure it (CI's files, scripts/gate, conftest.py, pytest's, coverage's
+# and ruff's configuration, uv.lock), and not to loosen the check of every later one by
+# changing those files or this workflow on main. Held for a human: drafts, and pull
+# requests labelled no-automerge, from forks, or into another branch.
 #
 # GitHub runs this from main's copy for status events, so a pull request cannot change
 # these rules for itself. It trusts a success only from Jenkins's GitHub App
 # (davidsiegl-jenkins[bot]), which the agents' own token cannot post as.
 #
-# It merges with the workflow's own token. A merge made with it starts no workflow for
-# the push to main; a release-on-merge workflow would need a personal token instead.
+# It acts with AUTOMERGE_TOKEN, a fine-grained personal access token of the repository's
+# owner limited to this repository, with contents, pull requests and workflows read and
+# write. Not github.token: GitHub refuses that token a merge that changes .github/workflows/,
+# and starts no workflow for the push to main that a merge made with it makes. When the
+# secret is missing or the token has expired, every run fails at its first gh call and
+# pull requests wait for a human until it is replaced.
 name: Auto-merge
 
 on:
@@ -26,15 +31,12 @@ jobs:
       github.event.context == 'continuous-integration/jenkins/pr-head' &&
       github.event.sender.login == 'davidsiegl-jenkins[bot]'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     # No concurrency group: one would cancel a queued run when a third arrives, leaving a
     # passed pull request unmerged. gh pr merge --match-head-commit makes parallel runs safe.
     steps:
       - shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
           GH_REPO: ${{ github.repository }}
           SHA: ${{ github.event.sha }}
         run: |

@@ -4,8 +4,8 @@
 #   UV_PUBLISH_TOKEN=pypi-… packaging/pypi/publish.sh
 #
 # Run from a clone of the repository. Takes the tag v<version> that the latest release names,
-# requires its commit to be on origin/main (so a release made at an unreviewed commit is never
-# published), builds that commit with uv build in a scratch directory, and requires the build
+# requires its commit to be on origin/main (so a release made at a commit that never reached
+# main is never published), builds that commit with uv build in a scratch directory, and requires the build
 # to be hyprmuse-<version>.tar.gz and hyprmuse-<version>-py3-none-any.whl (so the commit's
 # pyproject.toml has the tag's version). Nothing a release carries is uploaded: whoever can
 # create a release can attach files to it. A run that finds both files listed on the index stops
