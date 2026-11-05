@@ -1,10 +1,12 @@
 // Builds main and every pull request in a Multibranch Pipeline job and runs the quality
-// gate (scripts/gate) on each, failing the build on GATE: ERROR or when the gate could not
-// judge. For a pull request, Jenkins's GitHub App reports the result as the commit status
-// continuous-integration/jenkins/pr-head, which auto-merge trusts only from that App, as
-// does the ci-cd ruleset on main once agent-estate's init/github-rules.py has set it.
+// gate (scripts/gate) on each, failing the build on GATE: ERROR or when the gate could
+// not judge. For a pull request, Jenkins's GitHub App reports the result as the commit
+// status continuous-integration/jenkins/pr-head, which auto-merge trusts only from that
+// App, as does the ci-cd ruleset on main once agent-estate's init/github-rules.py has set
+// it.
 // docs/agents/README.md says how a pull request then merges; the agent-estate README,
-// "Jenkins", says what the job and the agent need.
+// "Jenkins", says what the job and the agent need. Stages Version, Package and Release then
+// release each merge into main that raises the version: scripts/release says what and when.
 pipeline {
     // Builds run code agents wrote: only on agents that hold nothing an agent should not
     // have. Jenkins enforces that per node (Job Restrictions plugin), not this label.
@@ -23,13 +25,9 @@ pipeline {
     }
 
     stages {
-        stage('Install') {
-            steps {
-                sh 'uv sync --frozen'
-            }
-        }
-
-        stage('Gate') {
+        // The change this build judges, from GATE_BASE to HEAD. scripts/gate decides how much
+        // of it to run: a change to docs alone runs its linters and no tests.
+        stage('Change') {
             steps {
                 script {
                     def base
@@ -47,11 +45,23 @@ pipeline {
                                                   script: 'git cat-file -e "$GIT_PREVIOUS_SUCCESSFUL_COMMIT^{commit}"') == 0
                         base = kept ? previous : 'HEAD^1'
                     }
-                    // The base reaches the shell as an environment variable, never as Groovy-built shell code.
-                    def status
-                    withEnv(["GATE_BASE=${base}"]) {
-                        status = sh(returnStatus: true, script: 'scripts/gate "$GATE_BASE"')
-                    }
+                    // The base reaches the shell as an environment variable, never as Groovy-built
+                    // shell code.
+                    env.GATE_BASE = base
+                }
+            }
+        }
+
+        stage('Install') {
+            steps {
+                sh 'uv sync --frozen'
+            }
+        }
+
+        stage('Gate') {
+            steps {
+                script {
+                    def status = sh(returnStatus: true, script: 'scripts/gate "$GATE_BASE"')
                     if (status == 1) {
                         error('GATE: ERROR - see quality.md')
                     } else if (status != 0) {
@@ -62,80 +72,63 @@ pipeline {
         }
 
         // A pull request into main must raise the release version over main's, unless it
-        // changes only docs, tests, CI or repository tooling: Release releases a merge into
-        // main only when its version has no release yet, so a merge that kept it would go
-        // unreleased (scripts/version-raised.sh, which lists those paths). After Gate, so a
-        // build that fails it has reported its tests and gate first.
+        // changes only exempt paths (scripts/release's header). After Gate, so a build that
+        // fails it has reported its tests and gate first.
         stage('Version') {
             when { changeRequest target: 'main' }
             steps {
-                sh 'scripts/version-raised.sh'
+                sh 'scripts/release raised "$CHANGE_TARGET"'
             }
         }
 
-        // The Linux binary, built on every pull request and main build, so a change that
-        // breaks it fails before it is merged; Release attaches it. The sdist and wheel are
-        // built only to fail such a change too: packaging/pypi/publish.sh builds what PyPI
-        // gets on a trusted node, since this agent runs unreviewed code.
+        // The repo's own scripts/package, run on a pull request whose change touches a
+        // released path, so one that breaks the build fails before it is merged and a change
+        // to docs alone builds nothing. On main, Release runs it itself when it releases.
         stage('Package') {
+            when {
+                changeRequest()
+                expression { fileExists('scripts/package') }
+            }
             steps {
-                sh 'packaging/build-binary.sh'
-                sh 'uv build'
+                script {
+                    def touched = sh(returnStatus: true, script: 'scripts/release changed "$GATE_BASE"')
+                    if (touched == 0) {
+                        sh 'scripts/package'
+                    } else if (touched == 1) {
+                        echo 'Only exempt paths changed: nothing to package.'
+                    } else {
+                        error("scripts/release changed failed (exit status ${touched})")
+                    }
+                }
             }
         }
 
-        // A merge into main that raises the version in pyproject.toml above the latest
-        // release releases it; any other merge finds that release already there, so a change
-        // to the paths Version exempts goes out with the next raise, and one that lowers the
-        // version fails the build rather than replace what releases/latest serves. Version
-        // makes every other pull request raise it, against main as it was when the pull
-        // request was built (TODO.md: two raises to the same version), so an agent's pull
-        // request is released, to GitHub, PyPI and the AUR, with no human (automerge.yml).
-        // gh creates the tag v<version> on GitHub at the commit built, so Jenkins needs no
-        // git push credentials.
+        // Releases a merge into main whose version has no release yet, packaging it first;
+        // any other merge finds its release there and builds nothing (scripts/release due
+        // and publish). scripts/package runs outside withCredentials, so no process above
+        // it holds the token; it can still reach publish's (scripts/release's header). gh creates the tag on GitHub, so Jenkins needs no git push
+        // credentials. The credential is bound on the agent that builds agents' pull
+        // requests: it must be a token the agents already hold (the agent-estate README,
+        // "Releases").
         stage('Release') {
             when { branch 'main' }
             steps {
-                withCredentials([string(credentialsId: 'GitHub-Agents', variable: 'GH_TOKEN')]) {
-                    sh '''
-                        version=$(uv version --short --frozen)
-                        tag="v$version"
-                        # Prints the tag of a release, or of the latest with no argument. Returns 0 for
-                        # a release, 1 for none, and 2 for any other error, such as a bad token, which
-                        # each caller fails the build on rather than release twice or over a newer one.
-                        # A status, not an exit, since the latest is asked for in a subshell.
-                        release_tag() {
-                            if gh release view "$@" --json tagName --jq .tagName 2>gh-release-view.err; then
-                                return 0
-                            fi
-                            grep -q 'release not found' gh-release-view.err && return 1
-                            cat gh-release-view.err >&2
-                            return 2
-                        }
-                        found=0
-                        release_tag "$tag" >/dev/null || found=$?
-                        case $found in
-                            0) echo "$tag is already released"; exit 0 ;;
-                            1) ;;
-                            *) exit 1 ;;
-                        esac
-                        found=0
-                        latest=$(release_tag) || found=$?
-                        [ "$found" -le 1 ] || exit 1
-                        if [ -n "$latest" ] && \
-                                [ "$(printf '%s\\n%s\\n' "$latest" "$tag" | sort -V | tail -n 1)" != "$tag" ]; then
-                            echo "pyproject.toml's version $version is below the latest release $latest" >&2
-                            exit 1
-                        fi
-                        # Whatever packaging/build-binary.sh built for this agent's architecture,
-                        # which names it, and the licenses of what that bundles.
-                        set -- dist/hyprmuse-linux-* dist/hyprmuse-third-party-licenses.txt
-                        for asset; do
-                            [ -f "$asset" ] || { echo "no $asset; run the whole build" >&2; exit 1; }
-                        done
-                        gh release create "$tag" "$@" \
-                            --target "$(git rev-parse HEAD)" --title "$tag" --generate-notes
-                    '''
+                script {
+                    def due
+                    withCredentials([string(credentialsId: 'GitHub-Agents', variable: 'GH_TOKEN')]) {
+                        due = sh(returnStatus: true, script: 'scripts/release due')
+                    }
+                    if (due == 1) {
+                        return
+                    } else if (due != 0) {
+                        error("scripts/release due failed (exit status ${due})")
+                    }
+                    if (fileExists('scripts/package')) {
+                        sh 'scripts/package'
+                    }
+                    withCredentials([string(credentialsId: 'GitHub-Agents', variable: 'GH_TOKEN')]) {
+                        sh 'scripts/release publish'
+                    }
                 }
             }
         }

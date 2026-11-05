@@ -6,21 +6,11 @@ None recorded yet.
 
 ## Open issues
 
-- **Two pull requests that raise to the same version release only the first.** Review 26,
-  F1: "The raise is checked against main as it was when the pull request was built, and
-  nothing re-checks it at merge time". The ci-cd ruleset has
-  `strict_required_status_checks_policy: false` and `automerge.yml` merges on the head
-  commit's existing success, so with main at 1.0.1, two pull requests each bumping to
-  1.0.2 both pass Version; the second merges cleanly, Release finds v1.0.2 already
-  there, and its change ships unreleased. Closed by checking the raise at merge time:
-  strict status checks with auto-merge updating a branch that is behind, or a re-check
-  in `automerge.yml`. To be settled in agent-estate's release option, which octoflow-ai
-  will share.
-- **Version and Release each compare versions with `sort -V`.** Review 26, F4: "a fix to
-  one (for example pre-release ordering) would leave Version and Release disagreeing".
-  `scripts/version-raised.sh` and the Jenkinsfile's Release stage each order versions.
-  Closed by one comparison both call, when agent-estate's release option takes both
-  over.
+- **Two auto-merge runs at the same moment can still merge two raises to one version.**
+  `automerge.yml` re-checks the raise right before merging (review 26, F1), which
+  narrows the race to two runs that both check before either merges; the second merge
+  then ships unreleased. A template issue: agent-estate's `TODO.md` holds it and what
+  closes it.
 - **`quote`'s `--lines`, `--width`, `--max-lines` and `--max-chars` skip `config.LEAST`.**
   `cmd_quote` copies them into `cfg` after `load_config` has checked the file, so
   `--lines 0` finds no quote even in a full library and a negative width reaches the

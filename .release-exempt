@@ -1,0 +1,13 @@
+# Paths whose changes reach no user, beside those scripts/release exempts itself; its
+# header says how a line is read.
+
+# The jobs that publish a release to PyPI and the AUR: CI.
+packaging/aur/Jenkinsfile
+packaging/pypi/Jenkinsfile
+# The AUR package reaches users without a release: the hyprmuse-aur job publishes it for
+# the latest one, once the pull request has moved it there and raised pkgrel itself
+# (packaging/aur/publish.sh's header).
+packaging/aur/PKGBUILD
+packaging/aur/.SRCINFO
+# The logo the README links from main, in no release asset.
+assets

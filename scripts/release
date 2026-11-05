@@ -1,0 +1,277 @@
+#!/bin/sh
+# Decides what a change releases, and releases it: the one home of which paths reach users
+# and of how release versions compare. From the agent-estate template; `copier update`
+# rewrites it, so change the template, not this copy.
+#
+#   scripts/release changed BASE
+#       Exit 0 when the change from BASE to HEAD touches a released path, 1 when it
+#       touches only exempt ones, 2 on an error (BASE unknown). Jenkins's Package stage
+#       builds a pull request only on 0, so a change to docs alone builds nothing.
+#   scripts/release raised TARGET
+#       Fetch origin's TARGET branch, then exit 0 when HEAD's release version is greater
+#       than TARGET's, or when the change since their merge base touches only exempt
+#       paths, saying so on standard output; exit 1, saying why on standard error, when
+#       the version is not greater; exit 2 on any error (a git command, a version that
+#       cannot be read). Jenkins's Version stage runs it on a pull request into main, and
+#       auto-merge again right before merging, since publish releases a merge into main
+#       only when its version has no release yet, so a merge that kept main's version
+#       would go unreleased.
+#   scripts/release due
+#       Exit 0 when HEAD's release version has no GitHub release yet, 1 when it has one,
+#       saying which on standard output; exit 2 on any error, among them a version below
+#       the latest release and gh failing for any reason but a missing release. Needs gh
+#       with GH_TOKEN, as publish does. CI runs it on main first, and only on 0 runs the
+#       repo's scripts/package and then publish, so a merge that releases nothing builds
+#       nothing.
+#   scripts/release publish
+#       Create GitHub release v<version> at HEAD with gh (GH_TOKEN must allow it), unless
+#       it exists. When the repo has scripts/package, attach every file directly in
+#       dist/release/: the caller runs scripts/package first, in this tree and with no
+#       token in its environment or any ancestor's (readable through /proc), since
+#       packaging runs build tools and their dependencies. That keeps the token out of
+#       packaging's environment only, not out of its reach: run as the same user in the
+#       same tree, it can leave a process that reads publish's, or rewrite this script
+#       (agent-estate's TODO.md, "The release token sits on the agent that runs agents'
+#       code"). Fails, creating nothing, where due fails; and, with scripts/package, when
+#       dist/release/ holds no file, a directory, or a name with a `#` (which gh reads as
+#       a label).
+#
+# The release version is pyproject.toml's [project] version, read at the commit (HEAD,
+# TARGET), not from the work tree. Versions compare release number by release number,
+# missing ones counting as 0 (so 0.10.0 > 0.9.0 and 1.0 = 1.0.0), then by what follows:
+# a dev release < alpha (a) < beta (b) < release candidate (rc) < the final release <
+# a post release, each pre-release by its own number (1.0.0rc1 < 1.0.0rc2 < 1.0.0).
+# PEP 440's and SemVer's spellings both read so (1.0.0rc1, 1.0.0-rc.1).
+#
+# Exempt paths, whose changes reach no user: EXEMPT below, plus the lines of the repo's own
+# .release-exempt, one git glob pathspec per line (`assets` covers everything under
+# assets/; `*` does not cross a /), blank lines ignored and `#` starting a comment. Any
+# other path is released, so a path left off errs towards a raise. `changed` reads
+# .release-exempt at HEAD; `raised` reads it on TARGET, so a pull request's edit to it
+# counts from the next pull request on, as scripts/gate reads its rules at BASE.
+set -eu
+# Every pattern here is a git pathspec, which git expands; the shell must not.
+set -f
+
+# Docs (Markdown at the top level and under docs/ only: Markdown elsewhere may ship),
+# tests, CI and the template's own tooling. scripts/package is left out on purpose: it
+# builds what users get.
+EXEMPT='docs
+*.md
+tests
+scripts/gate
+scripts/release
+Jenkinsfile
+.github
+.gitignore
+.copier-answers.yml
+.release-exempt'
+
+usage() {
+    echo "usage: scripts/release changed BASE | raised TARGET | due | publish" >&2
+    exit 2
+}
+
+# Prints a failure to standard error and exits 2, the status of an error that is not a
+# verdict.
+fail() {
+    echo "scripts/release: $*" >&2
+    exit 2
+}
+
+# Prints the exempt paths that hold at commit $1: EXEMPT and that commit's .release-exempt,
+# one per line, comments and blank lines dropped. Exits 2 when $1 is no commit.
+exempt_at() {
+    git rev-parse --verify --quiet "$1^{commit}" >/dev/null || fail "no commit $1"
+    listed=$(git ls-tree --name-only "$1" -- .release-exempt) || fail "cannot list $1"
+    extra=
+    if [ -n "$listed" ]; then
+        extra=$(git show "$1:.release-exempt") || fail "cannot read .release-exempt at $1"
+    fi
+    printf '%s\n%s\n' "$EXEMPT" "$extra" |
+        sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d'
+}
+
+# Returns 0 when the diff from commit $1 to HEAD touches a path not in the exempt list $2
+# (exempt_at's output), 1 when it does not, 2 when git fails.
+touches_released() {
+    # sh has no locals: these names are this function's alone, so callers keep theirs.
+    diff_rev=$1 diff_exempt=$2
+    set --
+    saved_ifs=$IFS
+    IFS='
+'
+    for path in $diff_exempt; do
+        set -- "$@" ":(exclude,glob)$path"
+    done
+    IFS=$saved_ifs
+    diff_status=0
+    git diff --quiet "$diff_rev" HEAD -- . "$@" || diff_status=$?
+    case $diff_status in
+        0) return 1 ;;
+        1) return 0 ;;
+        *) return 2 ;;
+    esac
+}
+
+# Prints pyproject.toml's [project] version at commit $1. It reads the header and the key
+# however TOML lets them be spaced or indented, either quote, a trailing comment and CRLF
+# line ends; not a quoted or dotted key ("version" = …, project.version = …). Exits 2 when
+# it finds none.
+version_at() {
+    text=$(git show "$1:pyproject.toml") || fail "cannot read pyproject.toml at $1"
+    # From the [project] header to the next line shaped like a table header.
+    version=$(printf '%s\n' "$text" | tr -d '\r' | sed -n "
+        /^[[:space:]]*\[[[:space:]]*project[[:space:]]*\][[:space:]]*\(#.*\)\{0,1\}\$/,/^[[:space:]]*\[.*\][[:space:]]*\(#.*\)\{0,1\}\$/{
+            s/^[[:space:]]*version[[:space:]]*=[[:space:]]*[\"']\([^\"']*\)[\"'][[:space:]]*\(#.*\)\{0,1\}\$/\1/p
+        }" | head -n 1)
+    [ -n "$version" ] || fail "no version in pyproject.toml's [project] table at $1"
+    echo "$version"
+}
+
+# Returns 0 when version $1 is greater than version $2, in the order the header gives.
+version_greater() {
+    awk -v a="$1" -v b="$2" '
+        # Splits version v into rel[1..n] (its release numbers, n returned) and pre[1..2]
+        # (the rank of what follows the release numbers, and the number in that part).
+        function parse(v, rel, pre,    n, rest, tag) {
+            sub(/^[vV]/, "", v)
+            n = 0
+            while (match(v, /^[0-9]+/)) {
+                rel[++n] = substr(v, 1, RLENGTH) + 0
+                v = substr(v, RLENGTH + 1)
+                if (v !~ /^\.[0-9]/) break
+                v = substr(v, 2)
+            }
+            rest = tolower(v)
+            sub(/^[-._+]/, "", rest)
+            tag = rest
+            sub(/[-._]?[0-9].*$/, "", tag)
+            if (rest == "") pre[1] = 4
+            else if (tag == "dev") pre[1] = 0
+            else if (tag == "a" || tag == "alpha") pre[1] = 1
+            else if (tag == "b" || tag == "beta") pre[1] = 2
+            else if (tag == "rc" || tag == "c" || tag == "pre" || tag == "preview") pre[1] = 3
+            else if (tag == "post" || tag == "r" || tag == "rev") pre[1] = 5
+            else pre[1] = 3
+            pre[2] = (match(rest, /[0-9]+/) ? substr(rest, RSTART, RLENGTH) + 0 : 0)
+            return n
+        }
+        BEGIN {
+            na = parse(a, ra, pa); nb = parse(b, rb, pb)
+            n = na > nb ? na : nb
+            for (i = 1; i <= n; i++) {
+                x = (i <= na ? ra[i] : 0); y = (i <= nb ? rb[i] : 0)
+                if (x != y) exit !(x > y)
+            }
+            for (i = 1; i <= 2; i++) if (pa[i] != pb[i]) exit !(pa[i] > pb[i])
+            exit 1
+        }'
+}
+
+changed() {
+    exempt=$(exempt_at HEAD)
+    status=0
+    touches_released "$1" "$exempt" || status=$?
+    exit "$status"
+}
+
+raised() {
+    target=$1
+    git fetch --quiet origin "+refs/heads/$target:refs/remotes/origin/$target" ||
+        fail "cannot fetch $target from origin"
+    exempt=$(exempt_at "origin/$target")
+    base=$(git merge-base HEAD "origin/$target") || fail "no merge base with $target"
+    status=0
+    touches_released "$base" "$exempt" || status=$?
+    case $status in
+        0) ;;
+        1) echo "scripts/release: the change since $target touches only exempt paths;" \
+               "nothing to release"
+           exit 0 ;;
+        *) fail "cannot diff the change since $target" ;;
+    esac
+    old=$(version_at "origin/$target")
+    new=$(version_at HEAD)
+    if ! version_greater "$new" "$old"; then
+        echo "scripts/release: pyproject.toml's version is $new, not greater than" \
+            "$target's $old; raise it with uv version --bump, or the merge goes unreleased" >&2
+        exit 1
+    fi
+}
+
+# Returns 0 when release v$version is due, as `due` says, 1 when it exists; exits 2 on
+# any other outcome, saying why.
+is_due() {
+    err=$(mktemp) || fail "cannot make a temporary file"
+    trap 'rm -f "$err"' EXIT
+
+    # Prints the tag of release $1, or of the latest with no argument. Returns 0 for a
+    # release, 1 for none, and 2 for any other error, such as a bad token, which each
+    # caller stops on rather than release twice or over a newer one.
+    release_tag() {
+        if gh release view "$@" --json tagName --jq .tagName 2>"$err"; then
+            return 0
+        fi
+        grep -q 'release not found' "$err" && return 1
+        cat "$err" >&2
+        return 2
+    }
+
+    found=0
+    release_tag "v$version" >/dev/null || found=$?
+    case $found in
+        0) return 1 ;;
+        1) ;;
+        *) exit 2 ;;
+    esac
+    found=0
+    latest=$(release_tag) || found=$?
+    [ "$found" -le 1 ] || exit 2
+    if [ -n "$latest" ] && version_greater "${latest#v}" "$version"; then
+        fail "pyproject.toml's version $version is below the latest release $latest"
+    fi
+}
+
+due() {
+    version=$(version_at HEAD)
+    if is_due; then
+        echo "v$version is due for release"
+    else
+        echo "v$version is already released"
+        exit 1
+    fi
+}
+
+publish() {
+    version=$(version_at HEAD)
+    tag="v$version"
+    if ! is_due; then
+        echo "$tag is already released"
+        exit 0
+    fi
+
+    # The assets: what scripts/package, run by the caller (the header), left.
+    set --
+    if [ -e scripts/package ]; then
+        set +f
+        for f in dist/release/* dist/release/.[!.]* dist/release/..?*; do
+            [ -e "$f" ] || [ -L "$f" ] || continue
+            [ -f "$f" ] || fail "$f is not a file; scripts/package must leave only files"
+            case $f in *'#'*) fail "$f has a # in its name, which gh reads as a label" ;; esac
+            set -- "$@" "$f"
+        done
+        set -f
+        [ $# -gt 0 ] || fail "dist/release/ holds no file; run scripts/package first"
+    fi
+    gh release create "$tag" "$@" --target "$(git rev-parse HEAD)" --title "$tag" \
+        --generate-notes
+}
+
+case ${1:-} in
+    changed) [ $# -eq 2 ] || usage; changed "$2" ;;
+    raised) [ $# -eq 2 ] || usage; raised "$2" ;;
+    due) [ $# -eq 1 ] || usage; due ;;
+    publish) [ $# -eq 1 ] || usage; publish ;;
+    *) usage ;;
+esac
