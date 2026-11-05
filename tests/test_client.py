@@ -72,13 +72,20 @@ def test_next_request_waits_out_the_rest_of_the_gap(monkeypatch, clock):
     assert clock.slept == [pytest.approx(3.0)]
 
 
-def test_jitter_adds_at_most_its_bound(monkeypatch, clock):
+def test_jitter_draws_up_to_its_bound_and_adds_it_to_the_gap(monkeypatch, clock):
     respond(monkeypatch)
+    bounds = []
+
+    def uniform(low, high):
+        bounds.append((low, high))
+        return 0.7
+
+    monkeypatch.setattr(base.random, "uniform", uniform)
     client = Client(gap=1.0, jitter=1.5)
-    for _ in range(20):
-        client.get("https://example.org")
-    assert all(1.0 <= s <= 2.5 for s in clock.slept)
-    assert len(clock.slept) == 19
+    client.get("https://example.org")
+    client.get("https://example.org")
+    assert bounds == [(0.0, 1.5)]
+    assert clock.slept == [pytest.approx(1.7)]
 
 
 def test_a_failed_request_still_counts_for_the_gap(monkeypatch, clock):
