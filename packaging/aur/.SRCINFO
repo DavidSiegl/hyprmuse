@@ -1,0 +1,19 @@
+pkgbase = hyprmuse-bin
+	pkgdesc = Random quotes from musicians, authors and poets for hyprlock
+	pkgver = 0.3.1
+	pkgrel = 1
+	url = https://github.com/DavidSiegl/hyprmuse
+	arch = x86_64
+	license = MIT
+	depends = glibc
+	depends = zlib
+	provides = hyprmuse
+	conflicts = hyprmuse
+	source = hyprmuse-0.3.1::https://github.com/DavidSiegl/hyprmuse/releases/download/v0.3.1/hyprmuse-linux-x86_64
+	source = hyprmuse-0.3.1-third-party-licenses.txt::https://github.com/DavidSiegl/hyprmuse/releases/download/v0.3.1/hyprmuse-third-party-licenses.txt
+	source = hyprmuse-0.3.1-LICENSE::https://raw.githubusercontent.com/DavidSiegl/hyprmuse/v0.3.1/LICENSE
+	sha256sums = f504862e9fb741ac79c7b596020c7f1bf1f58525d3d31ef67766d534c68e04ba
+	sha256sums = 72d55f0afaae052e93ab8126a3e45c805a645c840d545bc3ed79e554d8293df5
+	sha256sums = ed0d9881b2d2ceee18fae064011c650eb7b5c900aaa80d53a4c40b6b15ff277c
+
+pkgname = hyprmuse-bin
