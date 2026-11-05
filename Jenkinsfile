@@ -61,6 +61,18 @@ pipeline {
             }
         }
 
+        // A pull request into main must raise the release version over main's, unless it
+        // changes only docs, tests, CI or repository tooling: Release releases a merge into
+        // main only when its version has no release yet, so a merge that kept it would go
+        // unreleased (scripts/version-raised.sh, which lists those paths). After Gate, so a
+        // build that fails it has reported its tests and gate first.
+        stage('Version') {
+            when { changeRequest target: 'main' }
+            steps {
+                sh 'scripts/version-raised.sh'
+            }
+        }
+
         // The Linux binary, built on every pull request and main build, so a change that
         // breaks it fails before it is merged; Release attaches it. The sdist and wheel are
         // built only to fail such a change too: packaging/pypi/publish.sh builds what PyPI
@@ -74,10 +86,11 @@ pipeline {
 
         // A merge into main that raises the version in pyproject.toml above the latest
         // release releases it; any other merge finds that release already there, so a change
-        // goes out with the next raise, and one that lowers the version fails the build
-        // rather than replace what releases/latest serves. No check forces a pull request
-        // to raise it, as octoflow-ai's Version stage does. An agent's pull request that
-        // raises it is released, to GitHub, PyPI and the AUR, with no human (automerge.yml).
+        // to the paths Version exempts goes out with the next raise, and one that lowers the
+        // version fails the build rather than replace what releases/latest serves. Version
+        // makes every other pull request raise it, against main as it was when the pull
+        // request was built (TODO.md: two raises to the same version), so an agent's pull
+        // request is released, to GitHub, PyPI and the AUR, with no human (automerge.yml).
         // gh creates the tag v<version> on GitHub at the commit built, so Jenkins needs no
         // git push credentials.
         stage('Release') {
