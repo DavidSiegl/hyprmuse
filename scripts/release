@@ -27,9 +27,12 @@
 #       Create GitHub release v<version> at HEAD with gh (GH_TOKEN must allow it), unless
 #       it exists. When the repo has scripts/package, attach every file directly in
 #       dist/release/: the caller runs scripts/package first, in this tree and with no
-#       token anywhere in its process tree, since packaging runs build tools and their
-#       dependencies, and a token in any ancestor's environment is readable through
-#       /proc. Fails, creating nothing, where due fails; and, with scripts/package, when
+#       token in its environment or any ancestor's (readable through /proc), since
+#       packaging runs build tools and their dependencies. That keeps the token out of
+#       packaging's environment only, not out of its reach: run as the same user in the
+#       same tree, it can leave a process that reads publish's, or rewrite this script
+#       (agent-estate's TODO.md, "The release token sits on the agent that runs agents'
+#       code"). Fails, creating nothing, where due fails; and, with scripts/package, when
 #       dist/release/ holds no file, a directory, or a name with a `#` (which gh reads as
 #       a label).
 #

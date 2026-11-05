@@ -106,7 +106,7 @@ pipeline {
         // Releases a merge into main whose version has no release yet, packaging it first;
         // any other merge finds its release there and builds nothing (scripts/release due
         // and publish). scripts/package runs outside withCredentials, so no process above
-        // it holds the token. gh creates the tag on GitHub, so Jenkins needs no git push
+        // it holds the token; it can still reach publish's (scripts/release's header). gh creates the tag on GitHub, so Jenkins needs no git push
         // credentials. The credential is bound on the agent that builds agents' pull
         // requests: it must be a token the agents already hold (the agent-estate README,
         // "Releases").
