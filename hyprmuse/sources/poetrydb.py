@@ -8,6 +8,13 @@ from .base import Candidate, Client, Item, SourceError, Subject, reading
 API = "https://poetrydb.org"
 
 
+def _strings(value) -> list[str]:
+    """``value``, which a reply says is a list of strings; TypeError if it is not."""
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise TypeError(f"expected a list of strings, got {value!r:.60}")
+    return value
+
+
 class PoetryDB:
     name = "poetrydb"
     domain = "poetry"
@@ -18,10 +25,10 @@ class PoetryDB:
         self._client = client
 
     def _authors(self) -> list[str]:
-        url = f"{API}/author"
-        body = self._client.json(url)
-        with reading(self.name, url):
-            return [str(a) for a in body.get("authors", [])]
+        api_url = f"{API}/author"
+        resp = self._client.get(api_url)
+        with reading(self.name, api_url):
+            return _strings(resp.json().get("authors", []))
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
         authors = self._authors()
@@ -42,16 +49,25 @@ class PoetryDB:
         if progress:
             progress(f"fetching poems by {name}")
         api_url = f"{API}/author/{source_id}/title,author,lines"
-        poems = self._client.json(api_url)
-        if isinstance(poems, dict):  # PoetryDB reports misses as {"status":404,...}
-            raise SourceError(f"poetrydb: no poems for {name}")
-        items = []
+        resp = self._client.get(api_url)
         with reading(self.name, api_url):
-            for poem in poems:
-                lines = mark_stanzas(poem.get("lines", []))  # blanks = stanza breaks
-                if lines:
-                    items.append(Item(lines=lines, work=poem.get("title", ""),
-                                      url=url, atomic=False))
+            reply = resp.json()
+            # PoetryDB answers a miss with HTTP 200 and {"status": 404, ...}.
+            if isinstance(reply, dict) and reply.get("status") == 404:
+                raise SourceError(f"poetrydb: no poems for {name}")
+            if not isinstance(reply, list):
+                raise TypeError(f"poems are {type(reply).__name__}")
+            poems = []
+            for poem in reply:
+                title = poem.get("title", "")
+                if not isinstance(title, str):
+                    raise TypeError(f"title is {type(title).__name__}")
+                poems.append((title, _strings(poem.get("lines", []))))
+        items = []
+        for title, raw in poems:
+            lines = mark_stanzas(raw)  # blanks = stanza breaks
+            if lines:
+                items.append(Item(lines=lines, work=title, url=url, atomic=False))
         if not items:
             raise SourceError(f"poetrydb: no usable poems for {name}")
         return Subject(

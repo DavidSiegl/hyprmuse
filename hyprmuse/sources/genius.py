@@ -123,11 +123,11 @@ class Genius:
         self._client = client
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
-        url = f"{API}/search/artist"
-        body = self._client.json(url, params={"q": query})
+        api_url = f"{API}/search/artist"
+        resp = self._client.get(api_url, params={"q": query})
         hits = []
-        with reading(self.name, url):
-            for section in body.get("response", {}).get("sections", []):
+        with reading(self.name, api_url):
+            for section in resp.json().get("response", {}).get("sections", []):
                 if section.get("type") != "artist":
                     continue
                 for hit in section.get("hits", []):
@@ -154,11 +154,11 @@ class Genius:
         while page:
             if progress:
                 progress(f"song list page {page} ({len(songs)} so far)")
-            url = f"{API}/artists/{artist_id}/songs"
-            reply = self._client.json(url, params={"page": page, "sort": "popularity"})
-            with reading(self.name, url):
-                body = reply.get("response", {})
-                for song in body.get("songs", []):
+            api_url = f"{API}/artists/{artist_id}/songs"
+            resp = self._client.get(api_url, params={"page": page, "sort": "popularity"})
+            with reading(self.name, api_url):
+                response = resp.json().get("response", {})
+                for song in response.get("songs", []):
                     # Skip entries where this artist is only a featured guest.
                     primary = song.get("primary_artist", {})
                     if primary.get("id") and str(primary["id"]) != str(artist_id):
@@ -167,7 +167,7 @@ class Genius:
                         artist = {"name": primary.get("name", ""),
                                   "url": primary.get("url", "")}
                     songs.append({"title": song["title"], "url": song["url"]})
-                page = body.get("next_page")
+                page = response.get("next_page")
         return artist, songs
 
     def _lyrics(self, url: str) -> str | None:

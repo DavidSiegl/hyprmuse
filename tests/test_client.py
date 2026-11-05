@@ -27,8 +27,8 @@ def clock(monkeypatch):
     return clock
 
 
-def respond(monkeypatch, http_status=200, error=None, payload=None):
-    """Make requests.get answer ``http_status`` with ``payload``, or raise ``error``.
+def respond(monkeypatch, http_status=200, error=None):
+    """Make requests.get answer with ``http_status``, or raise ``error``.
 
     The body is empty, and its JSON is {}: every source's search reads that as
     no hits.
@@ -43,9 +43,6 @@ def respond(monkeypatch, http_status=200, error=None, payload=None):
 
         def json(self):
             return {}
-
-        def json(self):
-            return payload
 
     def get(*args, **kwargs):
         calls.append((args, kwargs))
@@ -65,13 +62,6 @@ def test_sends_params_a_user_agent_and_a_timeout(monkeypatch, clock):
     assert kwargs["params"] == {"q": "x"}
     assert kwargs["headers"] == {"User-Agent": base.BROWSER_USER_AGENT}
     assert kwargs["timeout"] == base.TIMEOUT
-
-
-def test_json_sends_params_and_returns_the_parsed_body(monkeypatch, clock):
-    calls = respond(monkeypatch, payload={"answer": 42})
-    assert Client().json("https://example.org/api", params={"q": "x"}) == {"answer": 42}
-    ((_, kwargs),) = calls
-    assert kwargs["params"] == {"q": "x"}
 
 
 def test_first_request_does_not_wait(monkeypatch, clock):

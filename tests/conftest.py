@@ -64,12 +64,6 @@ class FakeClient:
             raise SourceError(f"{url} returned HTTP 404")
         return self.routes[url]
 
-    def json(self, url, params=None):
-        try:
-            return self.get(url, params).json()
-        except ValueError as exc:
-            raise SourceError(f"{url} did not return JSON: {exc}") from exc
-
 
 def make_subject(source="genius", source_id="1", name="Test Subject",
                  domain="music", lang="en", items=None, atomic=False,

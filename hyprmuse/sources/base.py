@@ -41,9 +41,11 @@ class SourceError(RuntimeError):
 def reading(source: str, url: str) -> Iterator[None]:
     """Report a reply from ``url`` that does not have the shape ``source`` expects.
 
-    Wrap the code that picks a reply apart: a KeyError, IndexError, TypeError,
-    AttributeError or ValueError raised inside becomes a SourceError naming
-    ``source`` and ``url``. A SourceError passes through unchanged.
+    Wrap the code that parses a reply (``resp.json()``) and picks it apart, and
+    nothing else, since a bug in hyprmuse's own code inside would be blamed on
+    the provider: a KeyError, IndexError, TypeError, AttributeError or
+    ValueError raised inside becomes a SourceError naming ``source`` and
+    ``url``. A SourceError passes through unchanged.
     """
     try:
         yield
@@ -166,15 +168,3 @@ class Client:
         if resp.status_code != 200:
             raise SourceError(f"{url} returned HTTP {resp.status_code}")
         return resp
-
-    def json(self, url: str, params: dict | None = None):
-        """GET ``url`` as ``get`` does and return its body parsed as JSON.
-
-        Raises SourceError as ``get`` does, and also when the body is not JSON
-        (a maintenance page served with HTTP 200, say).
-        """
-        resp = self.get(url, params)
-        try:
-            return resp.json()
-        except ValueError as exc:
-            raise SourceError(f"{url} did not return JSON: {exc}") from exc

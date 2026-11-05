@@ -103,14 +103,14 @@ class Wikiquote:
         return f"https://{lang}.wikiquote.org/w/api.php"
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
-        api = self._api(lang)
-        body = self._client.json(api, params={
+        api_url = self._api(lang)
+        resp = self._client.get(api_url, params={
             "action": "query", "list": "search", "srsearch": query,
             "format": "json", "srlimit": 8,
         })
         out = []
-        with reading(self.name, api):
-            for hit in body.get("query", {}).get("search", []):
+        with reading(self.name, api_url):
+            for hit in resp.json().get("query", {}).get("search", []):
                 title = hit["title"]
                 out.append(Candidate(
                     source=self.name, source_id=f"{lang}:{title}", name=title,
@@ -124,14 +124,18 @@ class Wikiquote:
         url = f"https://{lang}.wikiquote.org/wiki/{title.replace(' ', '_')}"
         if progress:
             progress(f"parsing {title} ({lang}.wikiquote.org)")
-        api = self._api(lang)
-        reply = self._client.json(api, params={
+        api_url = self._api(lang)
+        resp = self._client.get(api_url, params={
             "action": "parse", "page": title, "prop": "wikitext", "format": "json",
         })
-        with reading(self.name, api):
+        with reading(self.name, api_url):
+            reply = resp.json()
             if "error" in reply:
                 raise SourceError(f"wikiquote: {reply['error'].get('info', 'page not found')}")
-            items = parse_wikitext(reply["parse"]["wikitext"]["*"])
+            wikitext = reply["parse"]["wikitext"]["*"]
+            if not isinstance(wikitext, str):
+                raise TypeError(f"wikitext is {type(wikitext).__name__}")
+        items = parse_wikitext(wikitext)
         if not items:
             raise SourceError(f"no quotes parsed from {title}")
         return Subject(

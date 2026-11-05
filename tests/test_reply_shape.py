@@ -54,12 +54,39 @@ def test_unexpected_reply_is_a_source_error(answer, name, body, call):
             src.search("anything", "en")
         else:
             src.fetch(JSON_SOURCES[name])
-    # The error names the URL whose reply it could not read, and, when the
-    # reply was JSON of the wrong shape, the source that could not read it.
-    # PoetryDB reads any JSON object as its "not found" reply, which is a miss
-    # with its own message, not an unreadable reply.
+    # The error names the source and the URL whose reply it could not read.
     msg = str(err.value)
-    if msg != "poetrydb: no poems for Emily Dickinson":
-        assert answer.urls[-1] in msg
-    if body != "html":
-        assert msg.startswith(f"{name}:")
+    assert msg.startswith(f"{name}: unexpected reply from {answer.urls[-1]}")
+
+
+@pytest.mark.parametrize("authors", [[None, {"name": "X"}], "Emily Dickinson"])
+def test_poetrydb_authors_that_are_not_strings_are_a_source_error(answer, authors):
+    answer(json.dumps({"authors": authors}))
+    with pytest.raises(SourceError, match="poetrydb: unexpected reply"):
+        type(REGISTRY["poetrydb"])(Client()).search("dickinson")
+
+
+@pytest.mark.parametrize("poem", [{"title": "Hope", "lines": "Hope is the thing"},
+                                  {"title": None, "lines": ["Hope"]}])
+def test_poetrydb_poem_of_the_wrong_shape_is_a_source_error(answer, poem):
+    answer(json.dumps([poem]))
+    with pytest.raises(SourceError, match="poetrydb: unexpected reply"):
+        type(REGISTRY["poetrydb"])(Client()).fetch("Emily Dickinson")
+
+
+def test_poetrydb_miss_is_reported_as_no_poems(answer):
+    answer(json.dumps({"status": 404, "reason": "Not found"}))
+    with pytest.raises(SourceError, match="no poems for Emily Dickinson"):
+        type(REGISTRY["poetrydb"])(Client()).fetch("Emily Dickinson")
+
+
+def test_a_bug_in_parsing_wikitext_is_not_blamed_on_wikiquote(answer, monkeypatch):
+    from hyprmuse.sources import wikiquote
+
+    def broken(_):
+        raise IndexError("bug")
+
+    monkeypatch.setattr(wikiquote, "parse_wikitext", broken)
+    answer(json.dumps({"parse": {"wikitext": {"*": "* A quote."}}}))
+    with pytest.raises(IndexError):
+        wikiquote.Wikiquote(Client()).fetch("en:Somebody")
