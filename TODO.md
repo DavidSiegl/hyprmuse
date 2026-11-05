@@ -46,3 +46,7 @@ None recorded yet.
   dozen license notices to `hyprmuse-third-party-licenses.txt`. Closed by finding what
   draws setuptools into the analysis and excluding it, then checking the binary still
   passes its smoke test.
+- **A Polish "see also" sub-bullet can become a quote's source.** pl.wikiquote puts
+  `** Źródło: …` and `** Zobacz też: …` under a quote; when a quote has no `Źródło`,
+  `wikiquote._read_bullet` takes the first sub-bullet, so `--note` shows "Zobacz też:
+  …". Closed by skipping sub-bullets that only link related pages.
