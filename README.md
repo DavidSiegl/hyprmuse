@@ -18,7 +18,7 @@ the lockscreen never waits on the network.
 | Source | Domain | Covers | Licence |
 |---|---|---|---|
 | `wikiquote` | quotations | authors, philosophers, scientists, films, TV, proverbs — editions `en`, `de`, `fr`, `es`, `it`, `pt`, `pl`, `ru`, `nl` | CC BY-SA |
-| `genius` | music | song lyrics for any artist | scraped, personal use |
+| `genius` | music | lyrics of an artist's 300 most popular songs | scraped, personal use |
 | `poetrydb` | poetry | ~130 classic poets, full poems | public domain |
 | `gutenberg` | prose | passages from public-domain books | public domain |
 
@@ -65,6 +65,7 @@ hyprmuse add "Element of Crime" --source genius
 hyprmuse add "Ingeborg Bachmann" --source wikiquote --lang de
 hyprmuse add "Emily Dickinson" --source poetrydb
 hyprmuse add "Frankenstein" --source gutenberg
+hyprmuse add "genius:342499"            # a source:id from search, harvested as is
 
 hyprmuse search "Nietzsche" --lang de   # look without harvesting
 hyprmuse list                           # what's stored

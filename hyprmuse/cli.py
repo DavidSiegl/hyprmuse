@@ -4,7 +4,7 @@ import argparse
 import sys
 
 from . import config, library, lockscreen
-from .sources import AUTO_ORDER, REGISTRY, SourceError, get_source
+from .sources import AUTO_ORDER, REGISTRY, SourceError, get_source, split_key
 from .sources.base import Candidate
 
 
@@ -17,13 +17,16 @@ def _progress(msg: str) -> None:
     print(f"  {msg}", file=sys.stderr)
 
 
-def _gather(query: str, source: str, lang: str) -> list[Candidate]:
-    """Candidates from one named source, or from every source in auto order."""
+def _gather(query: str, source: str, lang: str | None) -> list[Candidate]:
+    """Candidates from one named source, or from every source in auto order.
+
+    ``lang`` is the --lang flag, None when it was not given, which means en.
+    """
     names = [source] if source else AUTO_ORDER
     found: list[Candidate] = []
     for name in names:
         try:
-            hits = get_source(name).search(query, lang)
+            hits = get_source(name).search(query, lang or "en")
         except SourceError as exc:
             if source:
                 raise
@@ -64,16 +67,27 @@ def cmd_search(args) -> int:
 
 
 def cmd_add(args) -> int:
+    named = split_key(args.query)
+    if named:
+        source, source_id = named
+        if args.source and args.source != source:
+            return _err(f"{args.query!r} is a {source} subject, not a {args.source} one")
+        if args.lang is not None:
+            return _err(f"--lang does not apply to {args.query!r}, a source:id, "
+                        "which names one subject in one edition")
+        name = args.query
+    else:
+        try:
+            cands = _gather(args.query, args.source, args.lang)
+        except SourceError as exc:
+            return _err(str(exc))
+        cand = _choose(cands, args.yes)
+        if cand is None:
+            return _err(f"no match chosen for {args.query!r}")
+        source, source_id, name = cand.source, cand.source_id, cand.name
+    print(f"Harvesting {name} from {source}…", file=sys.stderr)
     try:
-        cands = _gather(args.query, args.source, args.lang)
-    except SourceError as exc:
-        return _err(str(exc))
-    cand = _choose(cands, args.yes)
-    if cand is None:
-        return _err(f"no match chosen for {args.query!r}")
-    print(f"Harvesting {cand.name} from {cand.source}…", file=sys.stderr)
-    try:
-        subject = get_source(cand.source).fetch(cand.source_id, _progress)
+        subject = get_source(source).fetch(source_id, _progress)
     except SourceError as exc:
         return _err(str(exc))
     path = library.save(subject)
@@ -166,11 +180,12 @@ def build_parser() -> argparse.ArgumentParser:
     def add_search_flags(sp):
         sp.add_argument("--source", default="", choices=sorted(REGISTRY) + [""],
                         help="restrict to one source (default: try all)")
-        sp.add_argument("--lang", default="en",
-                        help="language edition, for wikiquote (e.g. de)")
+        sp.add_argument("--lang", default=None,
+                        help="language edition, for wikiquote (e.g. de; default en)")
 
     sp = sub.add_parser("add", help="harvest a new subject")
-    sp.add_argument("query")
+    sp.add_argument("query", help="a name to search for, or a source:id that "
+                    "search printed, which is harvested without searching")
     add_search_flags(sp)
     sp.add_argument("--yes", "-y", action="store_true",
                     help="take the best match without prompting")

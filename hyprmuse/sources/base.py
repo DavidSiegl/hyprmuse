@@ -132,7 +132,10 @@ class Subject:
 
 
 def _key(source: str, source_id: str) -> str:
-    """The format of ``Subject.key`` and ``Candidate.key``, kept in one place."""
+    """The format of ``Subject.key`` and ``Candidate.key``.
+
+    ``sources.split_key`` reads it back; change the two together.
+    """
     return f"{source}:{source_id}"
 
 
