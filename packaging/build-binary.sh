@@ -24,14 +24,16 @@ uv run --frozen --group build pyinstaller --onefile --name "$name" --noconfirm -
 
 (cd dist && sha256sum "$name" > "$name.sha256")
 
-# What only harvesting imports, which no offline run reaches: bs4 finds its lxml builder
-# by a guarded import and would fail only at the first parse, and requests needs certifi's
-# CA bundle. So each must be in the archive by name.
+# What only harvesting needs, which no offline run reaches: requests reads certifi's CA
+# bundle at the first HTTPS request. So it must be in the archive by name.
 contents=$(uv run --frozen --group build pyi-archive_viewer -r -b "$bin")
-for want in bs4.builder._lxml 'lxml/etree\.' certifi/cacert.pem; do
-    printf '%s\n' "$contents" | grep -q "^ *$want" \
-        || { echo "build-binary.sh: $bin bundles no $want" >&2; exit 1; }
-done
+printf '%s\n' "$contents" | grep -q "^ *certifi/cacert.pem" \
+    || { echo "build-binary.sh: $bin bundles no certifi/cacert.pem" >&2; exit 1; }
+# bs4 imports lxml whenever it is installed, so a dependency or a stale venv that brings it back would bundle
+# it again unnoticed; packaging/licenses/README.md says why it must stay out.
+if printf '%s\n' "$contents" | grep -q "^ *lxml/"; then
+    echo "build-binary.sh: $bin bundles lxml" >&2; exit 1
+fi
 
 printf '%s\n' "$contents" | uv run --frozen --group build python packaging/third_party_notices.py \
     > dist/hyprmuse-third-party-licenses.txt

@@ -8,9 +8,7 @@ cache endpoint instead.
 import random
 import re
 
-from bs4 import BeautifulSoup
-
-from .base import Candidate, Client, Item, SourceError, Subject
+from .base import Candidate, Client, Item, SourceError, Subject, parse_html
 
 BASE = "https://www.gutenberg.org"
 MAX_PASSAGES = 300  # per book, keeps the stored file small and varied
@@ -85,7 +83,7 @@ class Gutenberg:
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
         resp = self._client.get(f"{BASE}/ebooks/search/", params={"query": query})
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = parse_html(resp.text)
         out = []
         for link in soup.select("li.booklink a.link"):
             href = link.get("href", "")

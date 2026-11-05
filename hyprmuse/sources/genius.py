@@ -3,10 +3,8 @@
 import statistics
 import re
 
-from bs4 import BeautifulSoup
-
 from ..text import mark_stanzas
-from .base import Candidate, Client, Item, NotFound, SourceError, Subject, reading
+from .base import Candidate, Client, Item, NotFound, SourceError, Subject, parse_html, reading
 
 API = "https://genius.com/api"
 
@@ -98,7 +96,7 @@ def lyrics_text(html: str) -> str | None:
     real break, so every line became its own stanza; since the selector slices
     within a stanza, no pick could ever be longer than a single line.
     """
-    soup = BeautifulSoup(html, "lxml")
+    soup = parse_html(html)
     containers = soup.find_all("div", attrs={"data-lyrics-container": "true"})
     if not containers:
         return None
