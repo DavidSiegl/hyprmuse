@@ -6,7 +6,7 @@ import re
 from bs4 import BeautifulSoup
 
 from ..text import mark_stanzas
-from .base import Candidate, Client, Item, SourceError, Subject
+from .base import Candidate, Client, Item, SourceError, Subject, reading
 
 API = "https://genius.com/api"
 
@@ -123,22 +123,24 @@ class Genius:
         self._client = client
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
-        resp = self._client.get(f"{API}/search/artist", params={"q": query})
+        api_url = f"{API}/search/artist"
+        resp = self._client.get(api_url, params={"q": query})
         hits = []
-        for section in resp.json().get("response", {}).get("sections", []):
-            if section.get("type") != "artist":
-                continue
-            for hit in section.get("hits", []):
-                res = hit.get("result", {})
-                if not res.get("id"):
+        with reading(self.name, api_url):
+            for section in resp.json().get("response", {}).get("sections", []):
+                if section.get("type") != "artist":
                     continue
-                hits.append(Candidate(
-                    source=self.name,
-                    source_id=str(res["id"]),
-                    name=res.get("name", query),
-                    domain=self.domain,
-                    hint="artist",
-                ))
+                for hit in section.get("hits", []):
+                    res = hit.get("result", {})
+                    if not res.get("id"):
+                        continue
+                    hits.append(Candidate(
+                        source=self.name,
+                        source_id=str(res["id"]),
+                        name=res.get("name", query),
+                        domain=self.domain,
+                        hint="artist",
+                    ))
         return hits
 
     def _songs(self, artist_id: str, progress=None) -> tuple[dict, list[dict]]:
@@ -152,19 +154,20 @@ class Genius:
         while page:
             if progress:
                 progress(f"song list page {page} ({len(songs)} so far)")
-            resp = self._client.get(f"{API}/artists/{artist_id}/songs",
-                                    params={"page": page, "sort": "popularity"})
-            body = resp.json().get("response", {})
-            for song in body.get("songs", []):
-                # Skip entries where this artist is only a featured guest.
-                primary = song.get("primary_artist", {})
-                if primary.get("id") and str(primary["id"]) != str(artist_id):
-                    continue
-                if primary.get("id") and not artist:
-                    artist = {"name": primary.get("name", ""),
-                              "url": primary.get("url", "")}
-                songs.append({"title": song["title"], "url": song["url"]})
-            page = body.get("next_page")
+            api_url = f"{API}/artists/{artist_id}/songs"
+            resp = self._client.get(api_url, params={"page": page, "sort": "popularity"})
+            with reading(self.name, api_url):
+                response = resp.json().get("response", {})
+                for song in response.get("songs", []):
+                    # Skip entries where this artist is only a featured guest.
+                    primary = song.get("primary_artist", {})
+                    if primary.get("id") and str(primary["id"]) != str(artist_id):
+                        continue
+                    if primary.get("id") and not artist:
+                        artist = {"name": primary.get("name", ""),
+                                  "url": primary.get("url", "")}
+                    songs.append({"title": song["title"], "url": song["url"]})
+                page = response.get("next_page")
         return artist, songs
 
     def _lyrics(self, url: str) -> str | None:

@@ -2,7 +2,7 @@
 
 import re
 
-from .base import Candidate, Client, Item, SourceError, Subject, hyprmuse_user_agent
+from .base import Candidate, Client, Item, SourceError, Subject, hyprmuse_user_agent, reading
 
 # Headings of sections that hold words other than the subject's own, grouped
 # by edition and matched against the heading's plain text, ignoring case.
@@ -330,17 +330,19 @@ class Wikiquote:
         return f"https://{lang}.wikiquote.org/w/api.php"
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
-        resp = self._client.get(self._api(lang), params={
+        api_url = self._api(lang)
+        resp = self._client.get(api_url, params={
             "action": "query", "list": "search", "srsearch": query,
             "format": "json", "srlimit": 8,
         })
         out = []
-        for hit in resp.json().get("query", {}).get("search", []):
-            title = hit["title"]
-            out.append(Candidate(
-                source=self.name, source_id=f"{lang}:{title}", name=title,
-                domain=self.domain, hint=f"{hit.get('wordcount', 0)} words",
-            ))
+        with reading(self.name, api_url):
+            for hit in resp.json().get("query", {}).get("search", []):
+                title = hit["title"]
+                out.append(Candidate(
+                    source=self.name, source_id=f"{lang}:{title}", name=title,
+                    domain=self.domain, hint=f"{hit.get('wordcount', 0)} words",
+                ))
         return out
 
     def fetch(self, source_id: str, progress=None) -> Subject:
@@ -349,13 +351,18 @@ class Wikiquote:
         url = f"https://{lang}.wikiquote.org/wiki/{title.replace(' ', '_')}"
         if progress:
             progress(f"parsing {title} ({lang}.wikiquote.org)")
-        resp = self._client.get(self._api(lang), params={
+        api_url = self._api(lang)
+        resp = self._client.get(api_url, params={
             "action": "parse", "page": title, "prop": "wikitext", "format": "json",
         })
-        data = resp.json()
-        if "error" in data:
-            raise SourceError(f"wikiquote: {data['error'].get('info', 'page not found')}")
-        items = parse_wikitext(data["parse"]["wikitext"]["*"], title)
+        with reading(self.name, api_url):
+            reply = resp.json()
+            if "error" in reply:
+                raise SourceError(f"wikiquote: {reply['error'].get('info', 'page not found')}")
+            wikitext = reply["parse"]["wikitext"]["*"]
+            if not isinstance(wikitext, str):
+                raise TypeError(f"wikitext is {type(wikitext).__name__}")
+        items = parse_wikitext(wikitext, title)
         if not items:
             raise SourceError(f"no quotes parsed from {title}")
         return Subject(

@@ -2,6 +2,8 @@
 
 import random
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from importlib import metadata
 from typing import Protocol
@@ -33,6 +35,22 @@ def hyprmuse_user_agent() -> str:
 
 class SourceError(RuntimeError):
     """A source could not fulfil a search or fetch."""
+
+
+@contextmanager
+def reading(source: str, url: str) -> Iterator[None]:
+    """Report a reply from ``url`` that does not have the shape ``source`` expects.
+
+    Wrap the code that parses a reply (``resp.json()``) and picks it apart, and
+    nothing else, since a bug in hyprmuse's own code inside would be blamed on
+    the provider: a KeyError, IndexError, TypeError, AttributeError or
+    ValueError raised inside becomes a SourceError naming ``source`` and
+    ``url``. A SourceError passes through unchanged.
+    """
+    try:
+        yield
+    except (KeyError, IndexError, TypeError, AttributeError, ValueError) as exc:
+        raise SourceError(f"{source}: unexpected reply from {url}: {exc!r}") from exc
 
 
 @dataclass
