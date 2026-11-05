@@ -3,7 +3,7 @@
 import pytest
 
 from hyprmuse import cli, config, library
-from hyprmuse.sources.base import Item
+from hyprmuse.sources.base import Item, SourceError
 from tests.conftest import make_subject
 
 
@@ -195,6 +195,31 @@ def test_update_all_goes_on_after_a_source_answers_garbage(capsys, monkeypatch,
     assert "failed" in out.err
     kafka = next(s for s in library.load_all() if s.source == "gutenberg")
     assert kafka.items[0].lines != ["old"]
+
+
+def test_update_keeps_the_stored_subject_when_genius_is_rate_limited(capsys, monkeypatch,
+                                                                    fake_client, fake_response):
+    """Regression (#12): a re-harvest that lost songs to a 429 replaced the full one."""
+    from hyprmuse import sources
+    from hyprmuse.sources import genius
+    from tests.test_genius import song, songs_url
+    client = fake_client({
+        songs_url(fake_client, 1): fake_response(
+            {"response": {"next_page": None, "songs": [song("first"), song("second")]}}),
+        "https://genius.com/first": fake_response(
+            text='<div data-lyrics-container="true">Still here</div>'),
+        "https://genius.com/second": SourceError("https://genius.com/second returned HTTP 429"),
+    })
+    monkeypatch.setitem(sources.REGISTRY, "genius", genius.Genius(client))
+    stored = make_subject(source="genius", source_id="7", name="Element of Crime",
+                          items=[Item(lines=["first"], atomic=False),
+                                 Item(lines=["second"], atomic=False)])
+    path = library.save(stored)
+    before = path.read_bytes()
+    code, out = run(["update", "genius:7"], capsys)
+    assert code == 1
+    assert "HTTP 429" in out.err
+    assert path.read_bytes() == before
 
 
 # A token that is one subject's key and part of another's name.
