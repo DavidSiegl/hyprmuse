@@ -47,11 +47,11 @@ sha256sum -c hyprmuse-linux-x86_64.sha256
 install -D -m 755 hyprmuse-linux-x86_64 ~/.local/bin/hyprmuse
 ```
 
-Or install it from [PyPI](https://pypi.org/project/hyprmuse/), which needs Python 3.14;
-`uv tool install` fetches that Python if the system lacks it:
+Or install the `hyprmuse` package from PyPI, which needs Python 3.14 or newer.
+`uv tool install` fetches that Python if the system lacks it; pipx needs it named:
 
 ```bash
-uv tool install hyprmuse    # or: pipx install hyprmuse
+uv tool install hyprmuse    # or: pipx install --python python3.14 hyprmuse
 ```
 
 Or run it from a checkout with `uv sync`, then `uv run hyprmuse` in place of `hyprmuse`
