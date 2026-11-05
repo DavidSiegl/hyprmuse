@@ -27,14 +27,16 @@ at its root.
 
 `scripts/gate [BASE]` runs the tests with coverage and octoflow-ai's `gate.py` over the change since BASE (default
 `main`), writing `quality.md`. Run it before handing a branch to review; fix each issue it lists on changed lines, and
-fix or justify each finding to weigh.
+fix or justify each finding to weigh. A change to docs alone (`docs/` and top-level Markdown) runs the gate's linters
+and no tests.
 
 ## CI and merging
 
 Jenkins builds every pull request and `main` with the `Jenkinsfile`, running `scripts/gate` over a pull request since
 its merge base and over `main` since its last successful build, and reports `continuous-integration/jenkins/pr-head`
-on each pull request through its GitHub App. A change to docs alone (`docs/` and top-level Markdown) runs the gate's
-linters and no tests.
+on each pull request through its GitHub App.
+A build of `main` with no earlier success to start from judges everything since the release before its commit, or the
+whole tree before the first release.
 
 Once that passes on a pull request's head commit, `.github/workflows/automerge.yml` merges it into `main` with a merge
 commit and deletes its branch: opening a pull request is handing it over. To keep one for a human, open it as a draft
@@ -44,15 +46,16 @@ with. Never merge a pull request yourself.
 
 ## Releases
 
-A merge into `main` releases the version in `pyproject.toml` as GitHub release `v<version>`, with whatever
-`scripts/package` leaves in `dist/release/`, if that release doesn't exist yet (`scripts/release publish`, run by
-Jenkins's Release stage). So a change reaches users only if it raises the version.
+A merge into `main` releases the version as GitHub release `v<version>`, with whatever `scripts/package` leaves in
+`dist/release/`, if that release doesn't exist yet (`scripts/release publish`, run by Jenkins's Release stage).
+The version is read from the first of `pyproject.toml`, `Cargo.toml`, `package.json` or `VERSION` that holds one
+(`scripts/release`'s header). So a change reaches users only if it raises the version.
 
 - Every change to a released path raises the version in the same pull request, and every spec or ticket for one lists
-  the bump and its level as an acceptance criterion: `uv version --bump patch` for a fix, `minor` for a new feature or
-  flag, `major` for a change that breaks what users rely on. Jenkins's Version stage fails a pull request that
-  doesn't, and auto-merge checks it again against `main` as it is when merging.
+  the bump and its level as an acceptance criterion: `patch` for a fix, `minor` for a new feature or flag, `major` for
+  a change that breaks what users rely on. Jenkins's Version stage fails a pull request that doesn't.
+  Auto-merge checks it again against `main` as it is when merging.
 - Changes only to exempt paths (docs, tests, CI, repository tooling: `scripts/release`'s header lists them, plus the
   repo's own `.release-exempt`) don't bump the version, and build no package.
 - Bump with `uv version --bump <level>`, never by editing `pyproject.toml`: it also updates `uv.lock`.
-- Don't create tags or releases by hand; Jenkins does that after the merge.
+- Don't create tags or releases by hand; CI does that after the merge.

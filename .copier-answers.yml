@@ -1,12 +1,12 @@
 # Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
-_commit: 6d35318
+_commit: 48c5333
 _src_path: /home/agent/GitHub/agent-estate
 automerge: true
 ci: jenkins
+gate: python
 jenkins_agent_label: untrusted
 jenkins_release_credential: GitHub-Agents
 jenkins_status_login: davidsiegl-jenkins[bot]
-python_gate: true
 python_package: hyprmuse
 release: true
 repo: DavidSiegl/hyprmuse

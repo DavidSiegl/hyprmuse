@@ -5,14 +5,14 @@
 #
 #   scripts/release changed BASE
 #       Exit 0 when the change from BASE to HEAD touches a released path, 1 when it
-#       touches only exempt ones, 2 on an error (BASE unknown). Jenkins's Package stage
-#       builds a pull request only on 0, so a change to docs alone builds nothing.
+#       touches only exempt ones, 2 on an error (BASE unknown). CI's Package stage or
+#       step builds a pull request only on 0, so a change to docs alone builds nothing.
 #   scripts/release raised TARGET
 #       Fetch origin's TARGET branch, then exit 0 when HEAD's release version is greater
 #       than TARGET's, or when the change since their merge base touches only exempt
 #       paths, saying so on standard output; exit 1, saying why on standard error, when
 #       the version is not greater; exit 2 on any error (a git command, a version that
-#       cannot be read). Jenkins's Version stage runs it on a pull request into main, and
+#       cannot be read). CI's Version stage or step runs it on a pull request into main, and
 #       auto-merge again right before merging, since publish releases a merge into main
 #       only when its version has no release yet, so a merge that kept main's version
 #       would go unreleased.
@@ -36,8 +36,20 @@
 #       dist/release/ holds no file, a directory, or a name with a `#` (which gh reads as
 #       a label).
 #
-# The release version is pyproject.toml's [project] version, read at the commit (HEAD,
-# TARGET), not from the work tree. Versions compare release number by release number,
+# The release version is read at the commit (HEAD, TARGET), not from the work tree, from
+# the first of these files to hold one there; `raised` names the tool that raises it
+# (bump_with):
+#
+#   pyproject.toml   [project] version
+#   Cargo.toml       [package] version, else [workspace.package] version
+#   package.json     "version"
+#   VERSION          its first line, a leading v dropped (the tag adds one)
+#
+# So a pyproject.toml whose version is dynamic yields to the Cargo.toml or VERSION that
+# holds it. TOML is read however a header or key may be spaced or indented, with either
+# quote, a trailing comment and CRLF line ends, but not as a quoted or dotted key
+# ("version" = …, project.version = …); package.json's is the first "version" key on a
+# line, which npm writes at the top level. Versions compare release number by release number,
 # missing ones counting as 0 (so 0.10.0 > 0.9.0 and 1.0 = 1.0.0), then by what follows:
 # a dev release < alpha (a) < beta (b) < release candidate (rc) < the final release <
 # a post release, each pre-release by its own number (1.0.0rc1 < 1.0.0rc2 < 1.0.0).
@@ -114,19 +126,48 @@ touches_released() {
     esac
 }
 
-# Prints pyproject.toml's [project] version at commit $1. It reads the header and the key
-# however TOML lets them be spaced or indented, either quote, a trailing comment and CRLF
-# line ends; not a quoted or dotted key ("version" = …, project.version = …). Exits 2 when
-# it finds none.
-version_at() {
-    text=$(git show "$1:pyproject.toml") || fail "cannot read pyproject.toml at $1"
-    # From the [project] header to the next line shaped like a table header.
-    version=$(printf '%s\n' "$text" | tr -d '\r' | sed -n "
-        /^[[:space:]]*\[[[:space:]]*project[[:space:]]*\][[:space:]]*\(#.*\)\{0,1\}\$/,/^[[:space:]]*\[.*\][[:space:]]*\(#.*\)\{0,1\}\$/{
+# Prints the version key of the TOML table whose name matches the basic regular expression
+# $1 in the TOML text on standard input, or nothing when it has none.
+toml_version() {
+    # From the table's header to the next line shaped like a table header.
+    tr -d '\r' | sed -n "
+        /^[[:space:]]*\[[[:space:]]*$1[[:space:]]*\][[:space:]]*\(#.*\)\{0,1\}\$/,/^[[:space:]]*\[.*\][[:space:]]*\(#.*\)\{0,1\}\$/{
             s/^[[:space:]]*version[[:space:]]*=[[:space:]]*[\"']\([^\"']*\)[\"'][[:space:]]*\(#.*\)\{0,1\}\$/\1/p
-        }" | head -n 1)
-    [ -n "$version" ] || fail "no version in pyproject.toml's [project] table at $1"
-    echo "$version"
+        }" | head -n 1
+}
+
+# Sets $version to the release version at commit $1 and $file to the file that holds it,
+# as the header says. Exits 2 when $1 is no commit or no file there holds one.
+version_at() {
+    git rev-parse --verify --quiet "$1^{commit}" >/dev/null || fail "no commit $1"
+    for file in pyproject.toml Cargo.toml package.json VERSION; do
+        git cat-file -e "$1:$file" 2>/dev/null || continue
+        text=$(git show "$1:$file") || fail "cannot read $file at $1"
+        case $file in
+            pyproject.toml) version=$(printf '%s\n' "$text" | toml_version project) ;;
+            Cargo.toml)
+                version=$(printf '%s\n' "$text" | toml_version package)
+                [ -n "$version" ] || version=$(printf '%s\n' "$text" |
+                    toml_version 'workspace[[:space:]]*\.[[:space:]]*package') ;;
+            package.json)
+                version=$(printf '%s\n' "$text" | tr -d '\r' | sed -n '
+                    s/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1) ;;
+            VERSION) version=$(printf '%s\n' "$text" | head -n 1 | tr -d '\r[:space:]' |
+                sed 's/^[vV]//') ;;
+        esac
+        [ -z "$version" ] || return 0
+    done
+    fail "no release version at $1: none in pyproject.toml, Cargo.toml, package.json or VERSION"
+}
+
+# Prints the command that raises the version file $1 holds (the header lists the files).
+bump_with() {
+    case $1 in
+        pyproject.toml) echo "uv version --bump LEVEL" ;;
+        Cargo.toml) echo "cargo set-version --bump LEVEL" ;;
+        package.json) echo "npm version LEVEL --no-git-tag-version" ;;
+        *) echo "an edit to $1" ;;
+    esac
 }
 
 # Returns 0 when version $1 is greater than version $2, in the order the header gives.
@@ -191,17 +232,18 @@ raised() {
            exit 0 ;;
         *) fail "cannot diff the change since $target" ;;
     esac
-    old=$(version_at "origin/$target")
-    new=$(version_at HEAD)
-    if ! version_greater "$new" "$old"; then
-        echo "scripts/release: pyproject.toml's version is $new, not greater than" \
-            "$target's $old; raise it with uv version --bump, or the merge goes unreleased" >&2
+    version_at "origin/$target"
+    oldfile=$file old=$version
+    version_at HEAD
+    if ! version_greater "$version" "$old"; then
+        echo "scripts/release: $file's version is $version, not greater than $old in $target's $oldfile;" \
+            "raise it with $(bump_with "$file"), or the merge goes unreleased" >&2
         exit 1
     fi
 }
 
 # Returns 0 when release v$version is due, as `due` says, 1 when it exists; exits 2 on
-# any other outcome, saying why.
+# any other outcome, saying why. version_at must have set $file and $version.
 is_due() {
     err=$(mktemp) || fail "cannot make a temporary file"
     trap 'rm -f "$err"' EXIT
@@ -229,12 +271,12 @@ is_due() {
     latest=$(release_tag) || found=$?
     [ "$found" -le 1 ] || exit 2
     if [ -n "$latest" ] && version_greater "${latest#v}" "$version"; then
-        fail "pyproject.toml's version $version is below the latest release $latest"
+        fail "$file's version $version is below the latest release $latest"
     fi
 }
 
 due() {
-    version=$(version_at HEAD)
+    version_at HEAD
     if is_due; then
         echo "v$version is due for release"
     else
@@ -244,7 +286,7 @@ due() {
 }
 
 publish() {
-    version=$(version_at HEAD)
+    version_at HEAD
     tag="v$version"
     if ! is_due; then
         echo "$tag is already released"

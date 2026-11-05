@@ -14,7 +14,7 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 Single-context repo (most repos):
 
-```
+```text
 /
 ├── GLOSSARY.md
 ├── docs/adr/
@@ -25,7 +25,7 @@ Single-context repo (most repos):
 
 Multi-context repo (presence of `GLOSSARY-MAP.md` at the root):
 
-```
+```text
 /
 ├── GLOSSARY-MAP.md
 ├── docs/adr/                          ← system-wide decisions
@@ -48,4 +48,4 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+> Contradicts ADR-0007 (event-sourced orders), but worth reopening because…
