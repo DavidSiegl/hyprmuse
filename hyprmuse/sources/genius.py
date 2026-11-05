@@ -173,9 +173,9 @@ class Genius:
         """The artist's own record and their songs among the MAX_SONGS most
         popular entries of their song list.
 
-        The artist record ({"name", "url"}) is read off the songs, so it is
-        empty when the artist is not the primary artist of any song. When the
-        limit cuts the list short, ``progress`` is told so.
+        The artist record ({"name", "url"}) is read off those songs, so it is
+        empty when the artist is not the primary artist of any of them. When
+        the limit cuts the list short, ``progress`` is told so.
         """
         listed: list[dict] = []
         page: int | None = 1
@@ -187,7 +187,7 @@ class Genius:
         if page or len(listed) > MAX_SONGS:
             listed = listed[:MAX_SONGS]
             if progress:
-                progress(f"kept the {MAX_SONGS} most popular of more songs")
+                progress(f"read only the {MAX_SONGS} most popular of more songs listed")
         return _own_songs(listed, artist_id)
 
     def _song_page(self, artist_id: str, page: int) -> tuple[list[dict], int | None]:
@@ -202,9 +202,13 @@ class Genius:
         resp = self._client.get(api_url, params={"page": page, "sort": "popularity"})
         with reading(self.name, api_url):
             response = resp.json().get("response", {})
-            entries = [{"title": song["title"], "url": song["url"],
-                        "primary_artist": song.get("primary_artist", {})}
-                       for song in response.get("songs", [])]
+            entries = []
+            for song in response.get("songs", []):
+                primary = song.get("primary_artist", {})
+                if not isinstance(primary, dict):
+                    raise TypeError(f"primary_artist is {primary!r}")
+                entries.append({"title": song["title"], "url": song["url"],
+                                "primary_artist": primary})
             return entries, response.get("next_page")
 
     def _lyrics(self, url: str) -> str | None:

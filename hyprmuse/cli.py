@@ -73,7 +73,8 @@ def cmd_add(args) -> int:
         if args.source and args.source != source:
             return _err(f"{args.query!r} is a {source} subject, not a {args.source} one")
         if args.lang is not None:
-            return _err(f"--lang does not apply to {args.query!r}: its id names its edition")
+            return _err(f"--lang does not apply to {args.query!r}, a source:id, "
+                        "which names one subject in one edition")
         name = args.query
     else:
         try:

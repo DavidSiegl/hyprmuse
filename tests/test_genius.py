@@ -244,7 +244,7 @@ def test_fetch_stops_listing_songs_at_the_limit(fake_client, fake_response, monk
     listed = [u for u in client.requested if "/songs?" in u]
     assert listed == [songs_url(fake_client, 1), songs_url(fake_client, 2)]
     assert [i.work for i in subject.items] == kept
-    assert "kept the 4 most popular of more songs" in said
+    assert "read only the 4 most popular of more songs listed" in said
 
 
 def test_fetch_counts_guest_appearances_towards_the_limit(fake_client, fake_response,
@@ -273,4 +273,14 @@ def test_fetch_takes_every_song_of_an_artist_up_to_the_limit(fake_client, fake_r
     said = []
     subject = genius.Genius(client).fetch("7", said.append)
     assert [i.work for i in subject.items] == ["first", "second", "third", "fourth"]
-    assert not any(m.startswith("kept") for m in said)
+    assert not any(m.startswith("read only") for m in said)
+
+
+def test_fetch_fails_cleanly_on_a_song_without_a_primary_artist_record(fake_client,
+                                                                       fake_response):
+    """Review 24, round 2: a null primary_artist escaped as AttributeError."""
+    entry = dict(song("odd"), primary_artist=None)
+    client = fake_client({songs_url(fake_client, 1): fake_response(
+        {"response": {"next_page": None, "songs": [entry]}})})
+    with pytest.raises(SourceError, match="unexpected reply"):
+        genius.Genius(client).fetch("7")
