@@ -124,6 +124,9 @@ enabled = true
 `weighting = "subject"` is the default so a 162-song band does not drown out an
 author with nine quotes.
 
+A setting of the wrong type, such as `width = "wide"`, keeps its default, and
+`hyprmuse quote` names it on stderr; the lockscreen still gets its quote.
+
 ## Storage
 
 ```

@@ -136,10 +136,17 @@ def _render(pick: _Pick, fit: _Fit, *, show_note: bool) -> str:
 
 
 def _load_recent() -> list[str]:
+    """The repeat history's fingerprints, oldest first.
+
+    Empty when the file is missing, unreadable, or not a list of strings.
+    """
     try:
-        return json.loads(config.RECENT_FILE.read_text(encoding="utf-8"))
+        seen = json.loads(config.RECENT_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
+    if isinstance(seen, list) and all(isinstance(f, str) for f in seen):
+        return seen
+    return []
 
 
 def _save_recent(seen: list[str], keep: int) -> None:

@@ -52,3 +52,23 @@ def test_fit_keys_are_read():
 
 def test_paths_are_namespaced_under_the_app():
     assert config.APP == "hyprmuse"
+
+
+def test_a_value_of_the_wrong_type_keeps_the_default_and_says_so(capsys):
+    # TOML's true is a Python int too; it still is not a width.
+    _write('[quote]\nwidth = true\nlines = 4\n[subjects."genius:1"]\nweight = 2\nenabled = "no"\n')
+    cfg = config.load_config()
+    assert cfg["width"] == config.DEFAULTS["width"]
+    assert cfg["lines"] == 4
+    assert cfg["subjects"]["genius:1"] == {"weight": 2}
+    err = capsys.readouterr().err
+    assert "[quote] width = True is not int" in err
+    assert '[subjects."genius:1"] enabled' in err
+
+
+def test_a_section_that_is_not_a_table_is_ignored(capsys):
+    _write('quote = 5\nsubjects = "x"\n')
+    cfg = config.load_config()
+    assert cfg["lines"] == config.DEFAULTS["lines"]
+    assert cfg["subjects"] == {}
+    assert "[quote] is not a table" in capsys.readouterr().err

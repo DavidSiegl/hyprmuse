@@ -78,14 +78,18 @@ def _to_subject(data: dict) -> Subject:
 
 
 def load_all() -> list[Subject]:
-    """Every stored subject. Unreadable files are skipped, not fatal."""
+    """Every stored subject.
+
+    A file that cannot be read, is not JSON, or does not have a subject's shape
+    is skipped, not fatal: one bad file must not cost the lockscreen its quote.
+    """
     if not config.SUBJECTS_DIR.is_dir():
         return []
     out = []
     for path in sorted(config.SUBJECTS_DIR.glob("*.json")):
         try:
             out.append(_to_subject(json.loads(path.read_text(encoding="utf-8"))))
-        except (OSError, ValueError, KeyError):
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
             continue
     return out
 
