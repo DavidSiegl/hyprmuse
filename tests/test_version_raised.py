@@ -34,7 +34,7 @@ class Repo:
         self.git("switch", "--quiet", "-c", "change")
 
     def git(self, *args, cwd=None):
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",  # noqa: S607
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",  # noqa: S603, S607
                         *args], cwd=cwd or self.path, check=True)
 
     def commit(self, files, message):
@@ -75,7 +75,8 @@ def test_a_kept_or_lowered_version_fails_naming_both(repo, version):
 def test_a_change_to_docs_tests_ci_or_repository_tooling_alone_passes(repo):
     only = ["docs/agents/README.md", "README.md", "TODO.md", "CLAUDE.md",
             "tests/test_x.py", "scripts/gate", "Jenkinsfile", "packaging/aur/Jenkinsfile",
-            "packaging/pypi/Jenkinsfile", ".github/workflows/automerge.yml",
+            "packaging/pypi/Jenkinsfile", "packaging/aur/PKGBUILD", "packaging/aur/.SRCINFO",
+            ".github/workflows/automerge.yml",
             ".gitignore", ".copier-answers.yml", "assets/logo.svg"]
     repo.commit(dict.fromkeys(only, "x"), "docs, tests, CI and repository tooling")
     proc = repo.check()
@@ -85,7 +86,7 @@ def test_a_change_to_docs_tests_ci_or_repository_tooling_alone_passes(repo):
 
 @pytest.mark.parametrize("path", [
     "hyprmuse/cli.py", "quote.py", "uv.lock", "packaging/build-binary.sh",
-    "packaging/aur/PKGBUILD", "packaging/licenses/README.md"])
+    "packaging/aur/update.sh", "packaging/licenses/README.md"])
 def test_a_change_that_also_touches_released_code_still_needs_the_raise(repo, path):
     repo.commit({"docs/notes.md": path, path: "x"}, path)
     proc = repo.check()

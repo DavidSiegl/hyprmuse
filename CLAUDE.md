@@ -6,7 +6,9 @@
 
 A merge into `main` releases the version in `pyproject.toml` as GitHub release `v<version>`, and to PyPI and the
 AUR, if that release doesn't exist yet (Jenkinsfile, Release stage). A change reaches users only if it raises the
-version.
+version, except one to the AUR package's own PKGBUILD, which the hyprmuse-aur job publishes with `pkgrel` raised
+(`packaging/aur/publish.sh`). Two pull requests open at once can each pass with the same raise; the one merged
+second then ships unreleased (`TODO.md`).
 
 - Every change that reaches users (the `hyprmuse` package, `quote.py`, the lockfile, packaging: any path
   `scripts/version-raised.sh` does not exempt) raises the version in the same pull request, and every spec or

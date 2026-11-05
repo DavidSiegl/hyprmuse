@@ -1,8 +1,8 @@
 #!/bin/sh
 # Exit 0 when the release version at HEAD, pyproject.toml's [project] version, is greater
 # than that of $CHANGE_TARGET, the branch a pull request build merges into, fetched from
-# origin first, or when the change since their merge base touches only docs, tests, CI or
-# repository tooling (NOT_RELEASED below), saying so on standard output; exit non-zero,
+# origin first; or when the change since their merge base touches only docs, tests, CI or
+# repository tooling (NOT_RELEASED below), saying so on standard output. Exit non-zero,
 # saying why on standard error, when it is not, or when either version cannot be read.
 # Versions are compared as sort -V orders them, number by number, so 0.10.0 is greater
 # than 0.9.0. Jenkins's Version stage runs it on a pull request build into main: the
@@ -23,10 +23,13 @@ project_version() {
 # tooling. A change to any other path, or a diff that fails, needs the version raised, so
 # a path left off errs towards a raise. Markdown counts as docs only at the top level and
 # under docs/: packaging/licenses/README.md ships in the binary. assets/ holds the logo
-# the README links from main, in no release asset. Each Jenkinsfile is CI; the rest of
-# packaging/ builds or describes what users install.
+# the README links from main, in no release asset. Each Jenkinsfile is CI. The AUR
+# package's PKGBUILD and .SRCINFO reach users without a release: the hyprmuse-aur job
+# publishes them for the latest one with pkgrel raised (packaging/aur/publish.sh). The
+# rest of packaging/ builds or describes what users install.
 NOT_RELEASED=":(exclude)docs :(exclude,glob)*.md :(exclude)tests :(exclude)scripts
 :(exclude)Jenkinsfile :(exclude)packaging/aur/Jenkinsfile :(exclude)packaging/pypi/Jenkinsfile
+:(exclude)packaging/aur/PKGBUILD :(exclude)packaging/aur/.SRCINFO
 :(exclude).github :(exclude).gitignore :(exclude).copier-answers.yml :(exclude)assets"
 base=$(git merge-base HEAD "origin/$CHANGE_TARGET")
 # shellcheck disable=SC2086 # NOT_RELEASED is split into one pathspec per word on purpose.

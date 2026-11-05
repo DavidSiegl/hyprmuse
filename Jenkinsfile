@@ -88,8 +88,9 @@ pipeline {
         // release releases it; any other merge finds that release already there, so a change
         // to the paths Version exempts goes out with the next raise, and one that lowers the
         // version fails the build rather than replace what releases/latest serves. Version
-        // makes every other pull request raise it, so an agent's pull request is released,
-        // to GitHub, PyPI and the AUR, with no human (automerge.yml).
+        // makes every other pull request raise it, against main as it was when the pull
+        // request was built (TODO.md: two raises to the same version), so an agent's pull
+        // request is released, to GitHub, PyPI and the AUR, with no human (automerge.yml).
         // gh creates the tag v<version> on GitHub at the commit built, so Jenkins needs no
         // git push credentials.
         stage('Release') {
