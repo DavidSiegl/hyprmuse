@@ -6,9 +6,9 @@
 #
 # gate.py's rules are BASE's pyproject.toml, so a change cannot loosen them; the tree's own
 # only when BASE has no pyproject.toml. pytest's and coverage's options and the tool
-# versions in uv.lock are still the tree's, which is why auto-merge, where it is set up,
-# lands only files the gate judges and holds every file that configures it; the header of
-# .github/workflows/automerge.yml has the rule. What each check means is in
+# versions in uv.lock are still the tree's, so a change can alter how its own tests run;
+# auto-merge, where it is set up, trusts a pull request that far (the header of
+# .github/workflows/automerge.yml). What each check means is in
 # https://github.com/DavidSiegl/octoflow-ai/blob/main/docs/quality-gate.md
 #
 # Exit status: 0 for GATE: OK, 1 for GATE: ERROR (quality.md says why), 2 when the change
