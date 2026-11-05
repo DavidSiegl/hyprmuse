@@ -46,15 +46,14 @@ def quote(cfg: dict, *, subject: str = "", domain: str = "", source: str = "",
         return None
     rng = random.Random(seed)
     recent = _load_recent()
-    keep = int(cfg.get("avoid_repeats", 20))
+    keep = cfg["avoid_repeats"]
     weights = [_weight(s, cfg) for s in pool]
     if sum(weights) <= 0:
         weights = [1.0] * len(pool)
-    fit = _Fit(width=int(cfg["width"]), max_lines=int(cfg["max_lines"]),
-               max_chars=int(cfg["max_chars"]))
+    fit = _Fit(width=cfg["width"], max_lines=cfg["max_lines"], max_chars=cfg["max_chars"])
 
-    draw = dict(num_lines=int(cfg["lines"]),
-                min_chars=int(cfg.get("min_line_chars", 0)),
+    draw = dict(num_lines=cfg["lines"],
+                min_chars=cfg["min_line_chars"],
                 recent=recent if keep > 0 else [])
     chosen = _draw(pool, weights, rng, fit=fit, **draw)
     if chosen is None and fit != _UNCONSTRAINED:
@@ -181,10 +180,10 @@ def _candidates(cfg: dict, *, subject: str, domain: str,
 def _weight(subj: Subject, cfg: dict) -> float:
     settings = cfg.get("subjects", {}).get(
         library.subject_key(subj.source, subj.source_id), {})
-    base = float(settings.get("weight", 1.0))
+    base = settings.get("weight", 1.0)
     # "quote" weighting makes every stored quote equally likely, so prolific
     # subjects dominate; "subject" (the default) gives each subject equal say.
-    return base * len(subj.items) if cfg.get("weighting") == "quote" else base
+    return base * len(subj.items) if cfg["weighting"] == "quote" else base
 
 
 def _extract(item: Item, num_lines: int, rng: random.Random, *,

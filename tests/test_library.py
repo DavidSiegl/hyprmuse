@@ -86,3 +86,24 @@ def test_remove_deletes_the_file():
 
 def test_subject_key_format():
     assert library.subject_key("wikiquote", "de:X") == "wikiquote:de:X"
+
+
+@pytest.mark.parametrize("item", [
+    {"lines": [1, 2]}, {"lines": None}, {"lines": ["a"], "work": 5},
+    {"lines": ["a"], "atomic": "yes"}, "oops",
+])
+def test_load_all_skips_and_names_a_file_with_an_item_of_the_wrong_shape(capsys, item):
+    library.save(make_subject())
+    broken = config.SUBJECTS_DIR / "broken.json"
+    broken.write_text(json.dumps({"source": "genius", "source_id": "2", "name": "B",
+                                  "items": [item]}), encoding="utf-8")
+    assert [s.source_id for s in library.load_all()] == ["1"]
+    assert str(broken) in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("stored", [[], {"source": "genius", "source_id": "2", "name": 5},
+                                    {"source": "genius", "name": "B"}])
+def test_load_all_skips_a_file_that_is_not_a_subject(stored):
+    library.save(make_subject())
+    (config.SUBJECTS_DIR / "broken.json").write_text(json.dumps(stored), encoding="utf-8")
+    assert [s.source_id for s in library.load_all()] == ["1"]

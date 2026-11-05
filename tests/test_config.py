@@ -1,5 +1,7 @@
 """Config loading and its fallbacks."""
 
+import pytest
+
 from hyprmuse import config
 
 
@@ -62,8 +64,30 @@ def test_a_value_of_the_wrong_type_keeps_the_default_and_says_so(capsys):
     assert cfg["lines"] == 4
     assert cfg["subjects"]["genius:1"] == {"weight": 2}
     err = capsys.readouterr().err
-    assert "[quote] width = True is not int" in err
+    assert "[quote] width = True is not a number >= 0" in err
     assert '[subjects."genius:1"] enabled' in err
+
+
+@pytest.mark.parametrize(("toml", "named"), [
+    ("[quote]\nlines = 0\n", "[quote] lines = 0"),
+    ("[quote]\nmax_chars = -5\n", "[quote] max_chars = -5"),
+    ("[quote]\nwidth = inf\n", "[quote] width = inf"),
+    ('[quote]\nweighting = "quotes"\n', "[quote] weighting = 'quotes'"),
+    ('[subjects."genius:1"]\nweight = inf\n', '[subjects."genius:1"] weight = inf'),
+    ('[subjects."genius:1"]\nweight = nan\n', '[subjects."genius:1"] weight = nan'),
+    ('[subjects."genius:1"]\nweight = -1\n', '[subjects."genius:1"] weight = -1'),
+])
+def test_a_value_out_of_range_keeps_the_default_and_says_so(capsys, toml, named):
+    _write(toml)
+    cfg = config.load_config()
+    assert {k: cfg[k] for k in config.DEFAULTS} == config.DEFAULTS
+    assert "weight" not in cfg["subjects"].get("genius:1", {})
+    assert named in capsys.readouterr().err
+
+
+def test_a_fraction_is_cut_to_a_whole_number():
+    _write("[quote]\nwidth = 40.7\n")
+    assert config.load_config()["width"] == 40
 
 
 def test_a_section_that_is_not_a_table_is_ignored(capsys):
