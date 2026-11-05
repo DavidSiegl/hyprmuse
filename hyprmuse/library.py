@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import sys
 import tempfile
 import unicodedata
 from datetime import datetime, timezone
@@ -56,33 +57,77 @@ def save(subject: Subject) -> Path:
     return path
 
 
-def _to_subject(data: dict) -> Subject:
+class _NotASubject(ValueError):
+    """A subject file's JSON is not shaped as ``save`` writes it."""
+
+
+def _to_subject(stored) -> Subject:
+    """The Subject a parsed subject file holds.
+
+    Raises _NotASubject, naming the field, when ``stored`` is not shaped as
+    ``save`` writes it: every text field a str, ``atomic`` a bool, ``lines`` a
+    list of str. ``domain``, ``lang``, ``url``, ``attribution``, ``items`` and
+    each item's fields but ``lines`` may be missing, and get their defaults.
+    """
+    if not isinstance(stored, dict):
+        raise _NotASubject("not a JSON object")
+    items = _field(stored, "items", list, [])
+    for item in items:
+        if not isinstance(item, dict):
+            raise _NotASubject("an item is not a JSON object")
+        lines = _field(item, "lines", list)
+        if not all(isinstance(ln, str) for ln in lines):
+            raise _NotASubject("an item's lines are not all text")
     return Subject(
-        source=data["source"],
-        source_id=data["source_id"],
-        name=data["name"],
-        domain=data.get("domain", "unknown"),
-        lang=data.get("lang", "en"),
-        url=data.get("url", ""),
-        attribution=data.get("attribution", {}),
+        source=_field(stored, "source", str),
+        source_id=_field(stored, "source_id", str),
+        name=_field(stored, "name", str),
+        domain=_field(stored, "domain", str, "unknown"),
+        lang=_field(stored, "lang", str, "en"),
+        url=_field(stored, "url", str, ""),
+        attribution=_field(stored, "attribution", dict, {}),
         items=[
-            Item(lines=i["lines"], work=i.get("work", ""), url=i.get("url", ""),
-                 atomic=i.get("atomic", False), note=i.get("note", ""))
-            for i in data.get("items", [])
+            Item(lines=i["lines"], work=_field(i, "work", str, ""),
+                 url=_field(i, "url", str, ""), atomic=_field(i, "atomic", bool, False),
+                 note=_field(i, "note", str, ""))
+            for i in items
         ],
     )
 
 
+_REQUIRED = object()
+
+
+def _field(stored: dict, key: str, kind: type, default=_REQUIRED):
+    """``stored[key]``, or ``default`` when it is missing and one is given.
+
+    Raises _NotASubject naming ``key`` when it is missing with no default, or
+    is not a ``kind``.
+    """
+    if key not in stored:
+        if default is _REQUIRED:
+            raise _NotASubject(f"{key} is missing")
+        return default
+    if not isinstance(stored[key], kind):
+        raise _NotASubject(f"{key} is not {kind.__name__}")
+    return stored[key]
+
+
 def load_all() -> list[Subject]:
-    """Every stored subject. Unreadable files are skipped, not fatal."""
+    """Every stored subject.
+
+    A file that cannot be read, is not JSON, or is not shaped as ``save``
+    writes it is skipped with a line on stderr naming it, not fatal: one bad
+    file must not cost the lockscreen its quote.
+    """
     if not config.SUBJECTS_DIR.is_dir():
         return []
     out = []
     for path in sorted(config.SUBJECTS_DIR.glob("*.json")):
         try:
             out.append(_to_subject(json.loads(path.read_text(encoding="utf-8"))))
-        except (OSError, ValueError, KeyError):
-            continue
+        except (OSError, ValueError) as exc:
+            print(f"hyprmuse: skipping {path}: {exc}", file=sys.stderr)
     return out
 
 

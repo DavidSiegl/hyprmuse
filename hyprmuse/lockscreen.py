@@ -46,16 +46,14 @@ def quote(cfg: dict, *, subject: str = "", domain: str = "", source: str = "",
         return None
     rng = random.Random(seed)
     recent = _load_recent()
-    keep = int(cfg.get("avoid_repeats", 20))
+    keep = cfg["avoid_repeats"]
     weights = [_weight(s, cfg) for s in pool]
     if sum(weights) <= 0:
         weights = [1.0] * len(pool)
-    fit = _Fit(width=int(cfg["width"]), max_lines=int(cfg["max_lines"]),
-               max_chars=int(cfg["max_chars"]))
+    fit = _Fit(width=cfg["width"], max_lines=cfg["max_lines"], max_chars=cfg["max_chars"])
 
-    draw = dict(num_lines=int(cfg["lines"]),
-                min_chars=int(cfg.get("min_line_chars", 0)),
-                recent=recent if keep > 0 else [])
+    draw = {"num_lines": cfg["lines"], "min_chars": cfg["min_line_chars"],
+            "recent": recent if keep > 0 else []}
     chosen = _draw(pool, weights, rng, fit=fit, **draw)
     if chosen is None and fit != _UNCONSTRAINED:
         # Nothing in the library fits the box; a trimmed quote beats a blank
@@ -136,10 +134,17 @@ def _render(pick: _Pick, fit: _Fit, *, show_note: bool) -> str:
 
 
 def _load_recent() -> list[str]:
+    """The repeat history's fingerprints, oldest first.
+
+    Empty when the file is missing, unreadable, or not a list of strings.
+    """
     try:
-        return json.loads(config.RECENT_FILE.read_text(encoding="utf-8"))
+        seen = json.loads(config.RECENT_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
+    if isinstance(seen, list) and all(isinstance(f, str) for f in seen):
+        return seen
+    return []
 
 
 def _save_recent(seen: list[str], keep: int) -> None:
@@ -172,10 +177,10 @@ def _settings(subj: Subject, cfg: dict) -> dict:
 
 
 def _weight(subj: Subject, cfg: dict) -> float:
-    base = float(_settings(subj, cfg).get("weight", 1.0))
+    base = _settings(subj, cfg).get("weight", 1.0)
     # "quote" weighting makes every stored quote equally likely, so prolific
     # subjects dominate; "subject" (the default) gives each subject equal say.
-    return base * len(subj.items) if cfg.get("weighting") == "quote" else base
+    return base * len(subj.items) if cfg["weighting"] == "quote" else base
 
 
 def _extract(item: Item, num_lines: int, rng: random.Random, *,

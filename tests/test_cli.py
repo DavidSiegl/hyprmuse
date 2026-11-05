@@ -265,3 +265,39 @@ def test_search_prints_the_token_that_names_each_hit(capsys, monkeypatch):
     monkeypatch.setitem(sources.REGISTRY, "genius", OneHit())
     code, out = run(["search", "hit", "--source", "genius"], capsys)
     assert code == 0 and "    genius:7" in out.out.splitlines()
+
+
+def _write_config(text):
+    config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    config.CONFIG_FILE.write_text(text, encoding="utf-8")
+
+
+@pytest.mark.parametrize(("toml", "named"), [
+    ('[quote]\nwidth = "wide"\n', "width"),
+    ('[subjects."genius:1"]\nweight = "high"\n', "weight"),
+])
+def test_quote_survives_a_config_value_of_the_wrong_type(capsys, toml, named):
+    """Regression (#10): hyprlock shows a blank label when quote dies."""
+    library.save(make_subject())
+    _write_config(toml)
+    code, out = run(["quote"], capsys)
+    assert code == 0 and "—" in out.out
+    assert named in out.err
+
+
+def test_quote_survives_a_recent_file_that_is_not_a_list(capsys):
+    library.save(make_subject())
+    config.RECENT_FILE.write_text("{}", encoding="utf-8")
+    code, out = run(["quote"], capsys)
+    assert code == 0 and "—" in out.out
+
+
+def test_quote_and_list_skip_a_subject_file_of_the_wrong_shape(capsys):
+    library.save(make_subject())
+    (config.SUBJECTS_DIR / "broken.json").write_text(
+        '{"source": "genius", "source_id": "2", "name": "Broken", "items": ["oops"]}',
+        encoding="utf-8")
+    code, out = run(["quote"], capsys)
+    assert code == 0 and "—" in out.out
+    code, out = run(["list"], capsys)
+    assert code == 0 and "Broken" not in out.out

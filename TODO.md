@@ -6,6 +6,10 @@ None recorded yet.
 
 ## Open issues
 
+- **`quote`'s `--lines`, `--width`, `--max-lines` and `--max-chars` skip `config.LEAST`.**
+  `cmd_quote` copies them into `cfg` after `load_config` has checked the file, so
+  `--lines 0` finds no quote even in a full library and a negative width reaches the
+  wrapper. argparse could check them against `config.LEAST`. Found in review 16.
 - **Each source's HTTP politeness is spread over its call sites.** Now
   [#7](https://github.com/DavidSiegl/hyprmuse/issues/7).
 - **Neither `publish.sh` has a committed test.** Review 08, F6: "the bare-repository
