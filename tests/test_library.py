@@ -165,3 +165,34 @@ def test_an_old_name_file_that_cannot_be_deleted_fails_remove(monkeypatch):
     monkeypatch.setattr(library.Path, "unlink", unlink)
     with pytest.raises(PermissionError):
         library.remove(subject)
+
+
+@pytest.mark.parametrize("item", [
+    {"lines": [1, 2]}, {"lines": None}, {"lines": ["a"], "work": 5},
+    {"lines": ["a"], "atomic": "yes"}, "oops",
+])
+def test_load_all_skips_and_names_a_file_with_an_item_of_the_wrong_shape(capsys, item):
+    library.save(make_subject())
+    broken = config.SUBJECTS_DIR / "broken.json"
+    broken.write_text(json.dumps({"source": "genius", "source_id": "2", "name": "B",
+                                  "items": [item]}), encoding="utf-8")
+    assert [s.source_id for s in library.load_all()] == ["1"]
+    assert str(broken) in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("stored", [[], {"source": "genius", "source_id": "2", "name": 5},
+                                    {"source": "genius", "name": "B"}])
+def test_load_all_skips_a_file_that_is_not_a_subject(stored):
+    library.save(make_subject())
+    (config.SUBJECTS_DIR / "broken.json").write_text(json.dumps(stored), encoding="utf-8")
+    assert [s.source_id for s in library.load_all()] == ["1"]
+
+
+def test_load_all_gives_missing_optional_fields_their_defaults():
+    (config.SUBJECTS_DIR).mkdir(parents=True)
+    (config.SUBJECTS_DIR / "minimal.json").write_text(json.dumps(
+        {"source": "genius", "source_id": "2", "name": "B", "items": [{"lines": ["a"]}]}),
+        encoding="utf-8")
+    (subject,) = library.load_all()
+    assert (subject.domain, subject.lang, subject.url, subject.attribution) == ("unknown", "en", "", {})
+    assert (subject.items[0].work, subject.items[0].atomic, subject.items[0].note) == ("", False, "")
