@@ -44,3 +44,9 @@ None recorded yet.
   dozen license notices to `hyprmuse-third-party-licenses.txt`. Closed by finding what
   draws setuptools into the analysis and excluding it, then checking the binary still
   passes its smoke test.
+- **Names without a hash are moved only when their subject is next saved or removed.**
+  Review 18, F4: "compatibility is attached to `save` and `remove` rather than done once",
+  so `library._unhashed_file` stays in both paths, and any new write or delete path must
+  remember it. Kept because a migration on load would make `hyprmuse quote`, which only
+  reads, write to the library. Closed by a one-off migration that `add`, `update` and
+  `remove` run before touching the store, after which `_unhashed_file` serves only it.
