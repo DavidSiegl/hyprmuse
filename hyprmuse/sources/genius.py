@@ -1,14 +1,12 @@
 """Genius: song lyrics for any musical artist. Sliceable items."""
 
-import random
 import statistics
 import re
-import time
 
 from bs4 import BeautifulSoup
 
 from ..text import mark_stanzas
-from .base import Candidate, Item, Source, SourceError, Subject, get
+from .base import Candidate, Client, Item, SourceError, Subject
 
 API = "https://genius.com/api"
 
@@ -120,8 +118,12 @@ class Genius:
     domain = "music"
     produces_atomic = False
 
+    def __init__(self, client: Client):
+        """``client`` makes every request this source sends."""
+        self._client = client
+
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
-        resp = get(f"{API}/search/artist", params={"q": query}, key="genius", throttle=0.5)
+        resp = self._client.get(f"{API}/search/artist", params={"q": query})
         hits = []
         for section in resp.json().get("response", {}).get("sections", []):
             if section.get("type") != "artist":
@@ -150,9 +152,8 @@ class Genius:
         while page:
             if progress:
                 progress(f"song list page {page} ({len(songs)} so far)")
-            resp = get(f"{API}/artists/{artist_id}/songs",
-                       params={"page": page, "sort": "popularity"},
-                       key="genius", throttle=0.5)
+            resp = self._client.get(f"{API}/artists/{artist_id}/songs",
+                                    params={"page": page, "sort": "popularity"})
             body = resp.json().get("response", {})
             for song in body.get("songs", []):
                 # Skip entries where this artist is only a featured guest.
@@ -168,7 +169,7 @@ class Genius:
 
     def _lyrics(self, url: str) -> str | None:
         try:
-            resp = get(url, key="genius")
+            resp = self._client.get(url)
         except SourceError:
             return None
         return lyrics_text(resp.text)
@@ -192,10 +193,11 @@ class Genius:
                 if lines:
                     subject.items.append(Item(lines=lines, work=song["title"],
                                               url=song["url"], atomic=False))
-            time.sleep(random.uniform(1.0, 2.5))
         if not subject.items:
             raise SourceError(f"no lyrics harvested for {name}")
         return subject
 
 
-SOURCE = Genius()
+# Lyrics pages are scraped one after another, so the gap is long and jittered;
+# it spaces the API calls the same way, as they go to the same host.
+SOURCE = Genius(Client(gap=1.0, jitter=1.5))

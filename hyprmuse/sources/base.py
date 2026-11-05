@@ -1,5 +1,6 @@
-"""Shared types and HTTP helpers for quote sources."""
+"""Shared types and the HTTP client for quote sources."""
 
+import random
 import time
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -112,25 +113,40 @@ class Source(Protocol):
         ...
 
 
-_LAST_CALL: dict[str, float] = {}
+class Client:
+    """Makes a source's HTTP GETs, spaced so its provider is never hit too often.
 
+    Each source holds one Client for all its requests, so the spacing covers
+    every request the source makes. A request starts at least ``gap`` seconds,
+    plus a random extra of up to ``jitter`` seconds, after the previous one
+    ended; the first request does not wait. Requests use a browser
+    User-Agent and a ``TIMEOUT``-second timeout.
+    """
 
-def get(url: str, *, params: dict | None = None, throttle: float = 0.0,
-        key: str = "default", headers: dict | None = None) -> requests.Response:
-    """GET with a browser UA, a timeout, and optional per-host throttling."""
-    if throttle:
-        elapsed = time.monotonic() - _LAST_CALL.get(key, 0.0)
-        if elapsed < throttle:
-            time.sleep(throttle - elapsed)
-    hdrs = {"User-Agent": USER_AGENT}
-    if headers:
-        hdrs.update(headers)
-    try:
-        resp = requests.get(url, params=params, headers=hdrs, timeout=TIMEOUT)
-    except requests.RequestException as exc:
-        raise SourceError(f"request to {url} failed: {exc}") from exc
-    finally:
-        _LAST_CALL[key] = time.monotonic()
-    if resp.status_code != 200:
-        raise SourceError(f"{url} returned HTTP {resp.status_code}")
-    return resp
+    def __init__(self, gap: float = 0.0, jitter: float = 0.0):
+        self._gap = gap
+        self._jitter = jitter
+        # time.monotonic() when the previous request ended; None before the first.
+        self._last_end: float | None = None
+
+    def get(self, url: str, params: dict | None = None) -> requests.Response:
+        """GET ``url`` with ``params`` as its query string, after waiting out the gap.
+
+        Returns the response when the status is 200. Raises SourceError when
+        the request fails (connection, timeout) or the status is anything else.
+        """
+        if self._last_end is not None:
+            jitter = random.uniform(0.0, self._jitter)  # noqa: S311 - spacing, not secrecy
+            wait = self._gap + jitter - (time.monotonic() - self._last_end)
+            if wait > 0:
+                time.sleep(wait)
+        try:
+            resp = requests.get(url, params=params, headers={"User-Agent": USER_AGENT},
+                                timeout=TIMEOUT)
+        except requests.RequestException as exc:
+            raise SourceError(f"request to {url} failed: {exc}") from exc
+        finally:
+            self._last_end = time.monotonic()
+        if resp.status_code != 200:
+            raise SourceError(f"{url} returned HTTP {resp.status_code}")
+        return resp
