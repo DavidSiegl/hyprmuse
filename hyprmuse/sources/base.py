@@ -3,15 +3,32 @@
 import random
 import time
 from dataclasses import dataclass, field
+from importlib import metadata
 from typing import Protocol
 
 import requests
 
-USER_AGENT = (
+# What the scraped sites see by default: some refuse clients that are not a browser.
+BROWSER_USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 TIMEOUT = 20
+
+
+def hyprmuse_user_agent() -> str:
+    """A User-Agent naming hyprmuse, its version and where to reach its maintainer.
+
+    For providers that ask automated clients to identify themselves, such as
+    Wikimedia (https://meta.wikimedia.org/wiki/User-Agent_policy). The version
+    comes from the installed package's metadata and is left out where there is
+    none, as in the PyInstaller binary.
+    """
+    try:
+        product = f"hyprmuse/{metadata.version('hyprmuse')}"
+    except metadata.PackageNotFoundError:
+        product = "hyprmuse"
+    return f"{product} (https://github.com/DavidSiegl/hyprmuse)"
 
 
 class SourceError(RuntimeError):
@@ -100,13 +117,15 @@ class Client:
     Each source holds one Client for all its requests, so the spacing covers
     every request the source makes. A request starts at least ``gap`` seconds,
     plus a random extra of up to ``jitter`` seconds, after the previous one
-    ended; the first request does not wait. Requests use a browser
-    User-Agent and a ``TIMEOUT``-second timeout.
+    ended; the first request does not wait. Requests send ``user_agent`` and
+    time out after ``TIMEOUT`` seconds.
     """
 
-    def __init__(self, gap: float = 0.0, jitter: float = 0.0):
+    def __init__(self, gap: float = 0.0, jitter: float = 0.0,
+                 user_agent: str = BROWSER_USER_AGENT):
         self._gap = gap
         self._jitter = jitter
+        self._user_agent = user_agent
         # time.monotonic() when the previous request ended; None before the first.
         self._last_end: float | None = None
 
@@ -122,7 +141,7 @@ class Client:
             if wait > 0:
                 time.sleep(wait)
         try:
-            resp = requests.get(url, params=params, headers={"User-Agent": USER_AGENT},
+            resp = requests.get(url, params=params, headers={"User-Agent": self._user_agent},
                                 timeout=TIMEOUT)
         except requests.RequestException as exc:
             raise SourceError(f"request to {url} failed: {exc}") from exc

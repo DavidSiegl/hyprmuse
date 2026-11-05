@@ -2,7 +2,7 @@
 
 import re
 
-from .base import Candidate, Client, Item, SourceError, Subject
+from .base import Candidate, Client, Item, SourceError, Subject, hyprmuse_user_agent
 
 # Sections holding quotes *about* the subject, or bare bibliography, rather
 # than words by them. Matched against the heading text, per language.
@@ -139,4 +139,5 @@ class Wikiquote:
         )
 
 
-SOURCE = Wikiquote(Client(gap=0.2))
+# Wikimedia asks bots to identify themselves; see hyprmuse_user_agent.
+SOURCE = Wikiquote(Client(gap=0.2, user_agent=hyprmuse_user_agent()))

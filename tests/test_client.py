@@ -3,7 +3,7 @@
 import pytest
 import requests
 
-from hyprmuse.sources import base
+from hyprmuse.sources import REGISTRY, base
 from hyprmuse.sources.base import Client, SourceError
 
 
@@ -53,7 +53,7 @@ def test_sends_params_a_user_agent_and_a_timeout(monkeypatch, clock):
     ((args, kwargs),) = calls
     assert args == ("https://example.org/api",)
     assert kwargs["params"] == {"q": "x"}
-    assert kwargs["headers"] == {"User-Agent": base.USER_AGENT}
+    assert kwargs["headers"] == {"User-Agent": base.BROWSER_USER_AGENT}
     assert kwargs["timeout"] == base.TIMEOUT
 
 
@@ -102,3 +102,39 @@ def test_non_200_is_a_source_error(monkeypatch, clock):
     respond(monkeypatch, http_status=429)
     with pytest.raises(SourceError, match="HTTP 429"):
         Client().get("https://example.org")
+
+
+class EmptyResponse:
+    """A 200 every source's search reads as no hits."""
+
+    status_code = 200
+    text = ""
+
+    def json(self):
+        return {}
+
+
+@pytest.mark.parametrize("name", sorted(REGISTRY))
+def test_only_wikiquote_identifies_as_hyprmuse(monkeypatch, clock, name):
+    agents = []
+
+    def get(*_, headers, **__):
+        agents.append(headers["User-Agent"])
+        return EmptyResponse()
+
+    monkeypatch.setattr(base.requests, "get", get)
+    REGISTRY[name].search("anything", "en")
+    expected = base.hyprmuse_user_agent() if name == "wikiquote" else base.BROWSER_USER_AGENT
+    assert agents == [expected]
+
+
+def test_hyprmuse_agent_names_the_version_and_a_contact(monkeypatch):
+    monkeypatch.setattr(base.metadata, "version", lambda _: "1.2.3")
+    assert base.hyprmuse_user_agent() == "hyprmuse/1.2.3 (https://github.com/DavidSiegl/hyprmuse)"
+
+
+def test_hyprmuse_agent_without_package_metadata(monkeypatch):
+    def missing(name):
+        raise base.metadata.PackageNotFoundError(name)
+    monkeypatch.setattr(base.metadata, "version", missing)
+    assert base.hyprmuse_user_agent() == "hyprmuse (https://github.com/DavidSiegl/hyprmuse)"
