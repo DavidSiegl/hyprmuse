@@ -91,20 +91,36 @@ def test_english_about_heading_is_skipped():
     assert wq.parse_wikitext(text) == []
 
 
-def test_fetch_raises_on_api_error(monkeypatch, fake_response):
+def parse_source(fake_client, fake_response, lang, title, payload):
+    """A Wikiquote whose ``lang`` edition answers a parse of ``title``."""
+    url = fake_client.url(f"https://{lang}.wikiquote.org/w/api.php", {
+        "action": "parse", "page": title, "prop": "wikitext", "format": "json"})
+    return wq.Wikiquote(fake_client({url: fake_response(payload)}))
+
+
+def test_fetch_raises_on_api_error(fake_client, fake_response):
     from hyprmuse.sources.base import SourceError
-    monkeypatch.setattr(wq, "get", lambda *a, **k: fake_response(
-        {"error": {"info": "page not found"}}))
+    src = parse_source(fake_client, fake_response, "en", "Nobody",
+                       {"error": {"info": "page not found"}})
     with pytest.raises(SourceError, match="page not found"):
-        wq.SOURCE.fetch("en:Nobody")
+        src.fetch("en:Nobody")
 
 
-def test_fetch_builds_subject_with_licence(monkeypatch, fake_response):
-    monkeypatch.setattr(wq, "get", lambda *a, **k: fake_response(
-        {"parse": {"wikitext": {"*": WIKITEXT}}}))
-    subject = wq.SOURCE.fetch("de:Jemand")
+def test_fetch_builds_subject_with_licence(fake_client, fake_response):
+    subject = parse_source(fake_client, fake_response, "de", "Jemand",
+                           {"parse": {"wikitext": {"*": WIKITEXT}}}).fetch("de:Jemand")
     assert subject.name == "Jemand"
     assert subject.lang == "de"
     assert subject.url == "https://de.wikiquote.org/wiki/Jemand"
     assert len(subject.items) == 2
     assert subject.attribution["license"] == "CC BY-SA 4.0"
+
+
+def test_search_ids_carry_the_edition(fake_client, fake_response):
+    url = fake_client.url("https://de.wikiquote.org/w/api.php", {
+        "action": "query", "list": "search", "srsearch": "kafka",
+        "format": "json", "srlimit": 8})
+    client = fake_client({url: fake_response({"query": {"search": [
+        {"title": "Franz Kafka", "wordcount": 1200}]}})})
+    hits = wq.Wikiquote(client).search("kafka", "de")
+    assert [(h.source_id, h.hint) for h in hits] == [("de:Franz Kafka", "1200 words")]

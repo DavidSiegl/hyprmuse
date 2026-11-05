@@ -143,12 +143,15 @@ in seinem Bett zu einem ungeheueren Ungeziefer verwandelt.
 
 
 def test_update_keeps_a_gutenberg_book_title_as_the_work(capsys, monkeypatch,
-                                                         fake_response):
+                                                         fake_client, fake_response):
     """Regression: update rebuilt the search hit from the stored subject and
     gutenberg.fetch read the author from it as the work, so every quote was
     attributed "— Franz Kafka: Franz Kafka"."""
+    from hyprmuse import sources
     from hyprmuse.sources import gutenberg
-    monkeypatch.setattr(gutenberg, "get", lambda *a, **k: fake_response(text=EBOOK))
+    client = fake_client({f"{gutenberg.BASE}/cache/epub/22367/pg22367.txt":
+                          fake_response(text=EBOOK)})
+    monkeypatch.setitem(sources.REGISTRY, "gutenberg", gutenberg.Gutenberg(client))
     library.save(make_subject(source="gutenberg", source_id="22367",
                               name="Franz Kafka", domain="prose", items=[
                                   Item(lines=["old"], work="Die Verwandlung",
