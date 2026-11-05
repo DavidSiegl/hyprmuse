@@ -1,0 +1,46 @@
+// The hyprmuse-pypi job: builds the latest GitHub release's tag and uploads its sdist and wheel
+// to PyPI with packaging/pypi/publish.sh. A build that finds PyPI current uploads nothing.
+//
+// It holds the PyPI token, so it is a Pipeline job of its own, not part of the multibranch
+// job, whose pull-request builds run their own Jenkinsfiles on the untrusted agent before
+// review. It needs:
+//   - "Pipeline script from SCM" on this repository, branch main only, script path
+//     packaging/pypi/Jenkinsfile, so only reviewed code sees the token;
+//   - in its folder's credential store, a "Secret text" credential with ID pypi-hyprmuse,
+//     a PyPI API token (account-wide for the first upload, then scoped to the project);
+//   - a node labelled trusted that no agent-written build can reach (Job Restrictions), with
+//     bash, curl, git, tar and uv;
+//   - one "Build Now", since Jenkins registers the triggers below only once the job has run.
+pipeline {
+    agent { label 'trusted' }
+
+    triggers {
+        // After each successful build of main (the multibranch job's full name for it), which is
+        // when a release appears; daily too, so a failed run, or a main build that failed after
+        // releasing, is retried without waiting for the next merge.
+        upstream(upstreamProjects: 'hyprmuse/main', threshold: hudson.model.Result.SUCCESS)
+        cron('H H * * *')
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        timeout(time: 15, unit: 'MINUTES')
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Publish') {
+            steps {
+                withCredentials([string(credentialsId: 'pypi-hyprmuse', variable: 'UV_PUBLISH_TOKEN')]) {
+                    sh 'packaging/pypi/publish.sh'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}

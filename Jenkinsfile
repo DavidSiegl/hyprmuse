@@ -62,10 +62,13 @@ pipeline {
         }
 
         // The Linux binary, built on every pull request and main build, so a change that
-        // breaks it fails before it is merged; Release attaches it.
+        // breaks it fails before it is merged; Release attaches it. The sdist and wheel are
+        // built only to fail such a change too: packaging/pypi/publish.sh builds what PyPI
+        // gets on a trusted node, since this agent runs unreviewed code.
         stage('Package') {
             steps {
                 sh 'packaging/build-binary.sh'
+                sh 'uv build'
             }
         }
 
