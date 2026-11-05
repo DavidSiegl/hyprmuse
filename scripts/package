@@ -1,0 +1,16 @@
+#!/bin/sh
+# Build what a release attaches into dist/release/, emptied first: the Linux binary for
+# this machine's architecture with its .sha256, and the licenses of what it bundles
+# (packaging/build-binary.sh). Also builds the sdist and wheel into dist/, only so that a
+# change breaking them fails before it is merged: packaging/pypi/publish.sh builds what
+# PyPI gets on a trusted node, since the Jenkins agent that runs this runs unreviewed code.
+# Jenkins's Package stage runs it when a change touches a released path; scripts/release
+# publish attaches every file in dist/release/.
+set -eu
+cd "$(dirname "$0")/.."
+
+packaging/build-binary.sh
+uv build
+rm -rf dist/release
+mkdir -p dist/release
+cp dist/hyprmuse-linux-* dist/hyprmuse-third-party-licenses.txt dist/release/

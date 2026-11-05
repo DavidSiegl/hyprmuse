@@ -1,8 +1,8 @@
 #!/bin/sh
 # Build dist/hyprmuse-linux-<arch>, a PyInstaller one-file binary of the hyprmuse command with Python and its
 # dependencies inside, write its .sha256 beside it and the licenses of what it bundles to
-# dist/hyprmuse-third-party-licenses.txt, and smoke-test it offline. Jenkins's Package stage runs it on every
-# build, and its Release stage attaches what it builds. Linux only, since hyprlock is. The binary links the C
+# dist/hyprmuse-third-party-licenses.txt, and smoke-test it offline. scripts/package runs it, and the release
+# attaches what it builds. Linux only, since hyprlock is. The binary links the C
 # library of the machine it was built on, so it runs on that glibc or a newer one.
 set -eu
 
