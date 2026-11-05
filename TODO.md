@@ -6,6 +6,11 @@ None recorded yet.
 
 ## Open issues
 
+- **`.copier-answers.yml` names an agent-estate commit that is not on its main.** `_commit:
+  4376091` is the tip of agent-estate's `automerge-octoflow-rule` branch (DavidSiegl/agent-estate#6).
+  If that pull request is squashed or rebased, or its branch deleted unmerged, the next
+  `copier update` cannot render the old version to diff against. Review 22, F6. Closed by
+  merging agent-estate#6 with a merge commit, which keeps 4376091 reachable from main.
 - **`quote`'s `--lines`, `--width`, `--max-lines` and `--max-chars` skip `config.LEAST`.**
   `cmd_quote` copies them into `cfg` after `load_config` has checked the file, so
   `--lines 0` finds no quote even in a full library and a negative width reaches the

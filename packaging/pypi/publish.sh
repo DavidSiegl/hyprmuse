@@ -5,12 +5,12 @@
 #
 # Run from a clone of the repository. Takes the tag v<version> that the latest release names,
 # requires its commit to be on origin/main (so a release made at a commit that never reached
-# main is never published), builds that commit with uv build in a scratch directory, and requires the build
-# to be hyprmuse-<version>.tar.gz and hyprmuse-<version>-py3-none-any.whl (so the commit's
-# pyproject.toml has the tag's version). Nothing a release carries is uploaded: whoever can
-# create a release can attach files to it. A run that finds both files listed on the index stops
-# before building; uv publish skips a file the index already has with the same hash and fails on
-# one with a different hash.
+# main is never published), builds that commit with uv build in a scratch directory, and
+# requires the build to be hyprmuse-<version>.tar.gz and hyprmuse-<version>-py3-none-any.whl
+# (so the commit's pyproject.toml has the tag's version). Nothing a release carries is
+# uploaded: whoever can create a release can attach files to it. A run that finds both files
+# listed on the index stops before building; uv publish skips a file the index already has with
+# the same hash and fails on one with a different hash.
 #
 # uv publish reads its token and URLs from the environment: UV_PUBLISH_TOKEN, and
 # UV_PUBLISH_URL and UV_PUBLISH_CHECK_URL, which default here to PyPI's upload API and simple
