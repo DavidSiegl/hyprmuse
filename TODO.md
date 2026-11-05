@@ -6,6 +6,11 @@ None recorded yet.
 
 ## Open issues
 
+- **Two auto-merge runs at the same moment can still merge two raises to one version.**
+  `automerge.yml` re-checks the raise right before merging (review 26, F1), which
+  narrows the race to two runs that both check before either merges; the second merge
+  then ships unreleased. A template issue: agent-estate's `TODO.md` holds it and what
+  closes it.
 - **`quote`'s `--lines`, `--width`, `--max-lines` and `--max-chars` skip `config.LEAST`.**
   `cmd_quote` copies them into `cfg` after `load_config` has checked the file, so
   `--lines 0` finds no quote even in a full library and a negative width reaches the

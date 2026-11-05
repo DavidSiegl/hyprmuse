@@ -6,25 +6,30 @@
 #   scripts/release changed BASE
 #       Exit 0 when the change from BASE to HEAD touches a released path, 1 when it
 #       touches only exempt ones, 2 on an error (BASE unknown). Jenkins's Package stage
-#       builds only on 0, so a change to docs alone builds nothing.
+#       builds a pull request only on 0, so a change to docs alone builds nothing.
 #   scripts/release raised TARGET
 #       Fetch origin's TARGET branch, then exit 0 when HEAD's release version is greater
 #       than TARGET's, or when the change since their merge base touches only exempt
-#       paths, saying so on standard output. Exit non-zero, saying why on standard error,
-#       when it is not, or when a version or a git command fails. Jenkins's Version stage
-#       runs it on a pull request into main, and auto-merge again right before merging,
-#       since publish releases a merge into main only when its version has no release yet,
-#       so a merge that kept main's version would go unreleased.
+#       paths, saying so on standard output; exit 1, saying why on standard error, when
+#       the version is not greater; exit 2 on any error (a git command, a version that
+#       cannot be read). Jenkins's Version stage runs it on a pull request into main, and
+#       auto-merge again right before merging, since publish releases a merge into main
+#       only when its version has no release yet, so a merge that kept main's version
+#       would go unreleased.
 #   scripts/release publish
-#       Create GitHub release v<version> at HEAD with gh (GH_TOKEN must allow it),
-#       attaching every file in dist/release/, which scripts/package writes. Does nothing
-#       when that release exists. Fails, creating nothing, when the version is below the
-#       latest release, when scripts/package is executable but dist/release/ holds no
-#       file, or when gh fails for any reason but a missing release.
+#       Create GitHub release v<version> at HEAD with gh (GH_TOKEN must allow it), unless
+#       it exists. When the repo has scripts/package, run it first and attach every file
+#       it leaves directly in dist/release/. Fails, creating nothing, when the version is
+#       below the latest release; when scripts/package fails, leaves no file, or leaves a
+#       directory or a name with a `#` (which gh reads as a label) in dist/release/; or
+#       when gh fails for any reason but a missing release.
 #
 # The release version is pyproject.toml's [project] version, read at the commit (HEAD,
-# TARGET), not from the work tree. Versions compare as sort -V orders them, number by
-# number, so 0.10.0 is greater than 0.9.0.
+# TARGET), not from the work tree. Versions compare release number by release number,
+# missing ones counting as 0 (so 0.10.0 > 0.9.0 and 1.0 = 1.0.0), then by what follows:
+# a dev release < alpha (a) < beta (b) < release candidate (rc) < the final release <
+# a post release, each pre-release by its own number (1.0.0rc1 < 1.0.0rc2 < 1.0.0).
+# PEP 440's and SemVer's spellings both read so (1.0.0rc1, 1.0.0-rc.1).
 #
 # Exempt paths, whose changes reach no user: EXEMPT below, plus the lines of the repo's own
 # .release-exempt, one git glob pathspec per line (`assets` covers everything under
@@ -55,18 +60,27 @@ usage() {
     exit 2
 }
 
-# The exempt paths that hold at REV: EXEMPT and REV's .release-exempt, one per line,
-# comments and blank lines dropped.
+# Prints a failure to standard error and exits 2, the status of an error that is not a
+# verdict.
+fail() {
+    echo "scripts/release: $*" >&2
+    exit 2
+}
+
+# Prints the exempt paths that hold at commit $1: EXEMPT and that commit's .release-exempt,
+# one per line, comments and blank lines dropped. Exits 2 when $1 is no commit.
 exempt_at() {
+    git rev-parse --verify --quiet "$1^{commit}" >/dev/null || fail "no commit $1"
+    listed=$(git ls-tree --name-only "$1" -- .release-exempt) || fail "cannot list $1"
     extra=
-    if git cat-file -e "$1:.release-exempt" 2>/dev/null; then
-        extra=$(git show "$1:.release-exempt")
+    if [ -n "$listed" ]; then
+        extra=$(git show "$1:.release-exempt") || fail "cannot read .release-exempt at $1"
     fi
     printf '%s\n%s\n' "$EXEMPT" "$extra" |
         sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d'
 }
 
-# Returns 0 when the diff from REV ($1) to HEAD touches a path not in the exempt list $2
+# Returns 0 when the diff from commit $1 to HEAD touches a path not in the exempt list $2
 # (exempt_at's output), 1 when it does not, 2 when git fails.
 touches_released() {
     # sh has no locals: these names are this function's alone, so callers keep theirs.
@@ -88,23 +102,56 @@ touches_released() {
     esac
 }
 
-# Prints pyproject.toml's [project] version at REV; exits 1, saying so, when it has none.
-# Read apart from the parse: sh has no pipefail, so a failing git show in a pipeline would
-# read as "no version" instead of stopping the script.
+# Prints pyproject.toml's [project] version at commit $1, written as TOML allows (either
+# quote, any spacing, a trailing comment, CRLF line ends). Exits 2 when it has none.
 version_at() {
-    text=$(git show "$1:pyproject.toml")
-    version=$(printf '%s\n' "$text" |
-        sed -n '/^\[project\]$/,/^\[/s/^version = "\([^"]*\)"$/\1/p' | head -n 1)
-    if [ -z "$version" ]; then
-        echo "scripts/release: no [project] version in pyproject.toml at $1" >&2
-        exit 1
-    fi
+    text=$(git show "$1:pyproject.toml") || fail "cannot read pyproject.toml at $1"
+    version=$(printf '%s\n' "$text" | tr -d '\r' | sed -n "
+        /^\[project\][[:space:]]*\(#.*\)\{0,1\}\$/,/^\[/{
+            s/^version[[:space:]]*=[[:space:]]*[\"']\([^\"']*\)[\"'][[:space:]]*\(#.*\)\{0,1\}\$/\1/p
+        }" | head -n 1)
+    [ -n "$version" ] || fail "no version in pyproject.toml's [project] table at $1"
     echo "$version"
 }
 
-# Returns 0 when version $1 is greater than version $2.
+# Returns 0 when version $1 is greater than version $2, in the order the header gives.
 version_greater() {
-    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]
+    awk -v a="$1" -v b="$2" '
+        # Splits version v into rel[1..n] (its release numbers, n returned) and pre[1..2]
+        # (the rank of what follows the release numbers, and the number in that part).
+        function parse(v, rel, pre,    n, rest, tag) {
+            sub(/^[vV]/, "", v)
+            n = 0
+            while (match(v, /^[0-9]+/)) {
+                rel[++n] = substr(v, 1, RLENGTH) + 0
+                v = substr(v, RLENGTH + 1)
+                if (v !~ /^\.[0-9]/) break
+                v = substr(v, 2)
+            }
+            rest = tolower(v)
+            sub(/^[-._+]/, "", rest)
+            tag = rest
+            sub(/[-._]?[0-9].*$/, "", tag)
+            if (rest == "") pre[1] = 4
+            else if (tag == "dev") pre[1] = 0
+            else if (tag == "a" || tag == "alpha") pre[1] = 1
+            else if (tag == "b" || tag == "beta") pre[1] = 2
+            else if (tag == "rc" || tag == "c" || tag == "pre" || tag == "preview") pre[1] = 3
+            else if (tag == "post" || tag == "r" || tag == "rev") pre[1] = 5
+            else pre[1] = 3
+            pre[2] = (match(rest, /[0-9]+/) ? substr(rest, RSTART, RLENGTH) + 0 : 0)
+            return n
+        }
+        BEGIN {
+            na = parse(a, ra, pa); nb = parse(b, rb, pb)
+            n = na > nb ? na : nb
+            for (i = 1; i <= n; i++) {
+                x = (i <= na ? ra[i] : 0); y = (i <= nb ? rb[i] : 0)
+                if (x != y) exit !(x > y)
+            }
+            for (i = 1; i <= 2; i++) if (pa[i] != pb[i]) exit !(pa[i] > pb[i])
+            exit 1
+        }'
 }
 
 changed() {
@@ -116,9 +163,10 @@ changed() {
 
 raised() {
     target=$1
-    git fetch --quiet origin "+refs/heads/$target:refs/remotes/origin/$target"
+    git fetch --quiet origin "+refs/heads/$target:refs/remotes/origin/$target" ||
+        fail "cannot fetch $target from origin"
     exempt=$(exempt_at "origin/$target")
-    base=$(git merge-base HEAD "origin/$target")
+    base=$(git merge-base HEAD "origin/$target") || fail "no merge base with $target"
     status=0
     touches_released "$base" "$exempt" || status=$?
     case $status in
@@ -126,7 +174,7 @@ raised() {
         1) echo "scripts/release: the change since $target touches only exempt paths;" \
                "nothing to release"
            exit 0 ;;
-        *) exit 1 ;;
+        *) fail "cannot diff the change since $target" ;;
     esac
     old=$(version_at "origin/$target")
     new=$(version_at HEAD)
@@ -171,13 +219,20 @@ publish() {
         exit 1
     fi
 
-    set +f
-    set -- dist/release/*
-    set -f
-    [ -f "$1" ] || set --
-    if [ -x scripts/package ] && [ $# -eq 0 ]; then
-        echo "scripts/release: scripts/package left no file in dist/release/; run it first" >&2
-        exit 1
+    # The assets: what scripts/package leaves in dist/release/, built here rather than
+    # taken from an earlier stage, so that what is released is what HEAD builds.
+    set --
+    if [ -e scripts/package ]; then
+        scripts/package || fail "scripts/package failed"
+        set +f
+        for f in dist/release/* dist/release/.[!.]* dist/release/..?*; do
+            [ -e "$f" ] || [ -L "$f" ] || continue
+            [ -f "$f" ] || fail "$f is not a file; scripts/package must leave only files"
+            case $f in *'#'*) fail "$f has a # in its name, which gh reads as a label" ;; esac
+            set -- "$@" "$f"
+        done
+        set -f
+        [ $# -gt 0 ] || fail "scripts/package left no file in dist/release/"
     fi
     gh release create "$tag" "$@" --target "$(git rev-parse HEAD)" --title "$tag" \
         --generate-notes

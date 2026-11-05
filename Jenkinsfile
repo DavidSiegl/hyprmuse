@@ -1,8 +1,9 @@
 // Builds main and every pull request in a Multibranch Pipeline job and runs the quality
-// gate (scripts/gate) on each, failing the build on GATE: ERROR or when the gate could not
-// judge. For a pull request, Jenkins's GitHub App reports the result as the commit status
-// continuous-integration/jenkins/pr-head, which auto-merge trusts only from that App, as
-// does the ci-cd ruleset on main once agent-estate's init/github-rules.py has set it.
+// gate (scripts/gate) on each, unless it changes docs alone, failing the build on GATE:
+// ERROR or when the gate could not judge. For a pull request, Jenkins's GitHub App
+// reports the result as the commit status continuous-integration/jenkins/pr-head, which
+// auto-merge trusts only from that App, as does the ci-cd ruleset on main once
+// agent-estate's init/github-rules.py has set it.
 // docs/agents/README.md says how a pull request then merges; the agent-estate README,
 // "Jenkins", says what the job and the agent need. Stages Version, Package and Release then
 // release each merge into main that raises the version: scripts/release says what and when.
@@ -24,13 +25,10 @@ pipeline {
     }
 
     stages {
-        stage('Install') {
-            steps {
-                sh 'uv sync --frozen'
-            }
-        }
-
-        stage('Gate') {
+        // The change this build judges, from GATE_BASE to HEAD, and whether it touches docs
+        // alone (docs/ and Markdown at the top level), in which case DOCS_ONLY is 'true' and
+        // Install and Gate are skipped: the owner's rule, 2026-11-05.
+        stage('Change') {
             steps {
                 script {
                     def base
@@ -49,8 +47,30 @@ pipeline {
                         base = kept ? previous : 'HEAD^1'
                     }
                     // The base reaches the shell as an environment variable, never as Groovy-built
-                    // shell code. Package reads it too.
+                    // shell code.
                     env.GATE_BASE = base
+                    // 0 only when nothing outside the docs changed; a git error runs the gate.
+                    env.DOCS_ONLY = sh(returnStatus: true, script: '''
+                        git diff --quiet "$GATE_BASE" HEAD -- . ':(exclude)docs' ':(exclude,glob)*.md'
+                    ''') == 0 ? 'true' : 'false'
+                    if (env.DOCS_ONLY == 'true') {
+                        echo 'Only docs changed: no install and no gate.'
+                    }
+                }
+            }
+        }
+
+        stage('Install') {
+            when { expression { env.DOCS_ONLY != 'true' } }
+            steps {
+                sh 'uv sync --frozen'
+            }
+        }
+
+        stage('Gate') {
+            when { expression { env.DOCS_ONLY != 'true' } }
+            steps {
+                script {
                     def status = sh(returnStatus: true, script: 'scripts/gate "$GATE_BASE"')
                     if (status == 1) {
                         error('GATE: ERROR - see quality.md')
@@ -71,19 +91,21 @@ pipeline {
             }
         }
 
-        // The repo's own scripts/package, which writes what Release attaches to
-        // dist/release/: run only when the change since Gate's base touches a released path,
-        // so a change to docs alone builds nothing. A pull request that breaks the build so
-        // fails before it is merged.
+        // The repo's own scripts/package, run on a pull request whose change touches a
+        // released path, so one that breaks the build fails before it is merged and a change
+        // to docs alone builds nothing. On main, Release runs it itself when it releases.
         stage('Package') {
-            when { expression { fileExists('scripts/package') } }
+            when {
+                changeRequest()
+                expression { fileExists('scripts/package') }
+            }
             steps {
                 script {
                     def touched = sh(returnStatus: true, script: 'scripts/release changed "$GATE_BASE"')
                     if (touched == 0) {
                         sh 'scripts/package'
                     } else if (touched == 1) {
-                        echo 'Only exempt paths changed since the gate base: nothing to package.'
+                        echo 'Only exempt paths changed: nothing to package.'
                     } else {
                         error("scripts/release changed failed (exit status ${touched})")
                     }
@@ -91,9 +113,11 @@ pipeline {
             }
         }
 
-        // Releases a merge into main whose version has no release yet; any other merge finds
-        // its release there and does nothing (scripts/release publish). gh creates the tag
-        // on GitHub, so Jenkins needs no git push credentials.
+        // Releases a merge into main whose version has no release yet, packaging it first;
+        // any other merge finds its release there and does nothing (scripts/release
+        // publish). gh creates the tag on GitHub, so Jenkins needs no git push credentials.
+        // The credential is bound on the agent that builds agents' pull requests: it must be
+        // a token the agents already hold (the agent-estate README, "Releases").
         stage('Release') {
             when { branch 'main' }
             steps {

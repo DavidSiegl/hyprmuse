@@ -59,9 +59,8 @@ jobs:
             echo "::error::could not list the pull requests at $SHA"
             exit 1
           fi
-          cp scripts/release "$RUNNER_TEMP/release"
-          git fetch --quiet origin "$SHA"
-          git checkout --quiet --detach "$SHA"
+          # Whether the work tree holds $SHA, with main's scripts/release kept aside to judge it.
+          checked_out=false
           for pr in $prs; do
             if ! fields=$(gh pr view "$pr" \
               --json headRefOid,headRefName,baseRefName,isDraft,isCrossRepository,labels \
@@ -79,10 +78,31 @@ jobs:
               echo "#$pr: held (base $base, draft $draft, fork $fork, no-automerge $held)"
               continue
             fi
-            if ! why=$(sh "$RUNNER_TEMP/release" raised main 2>&1 >/dev/null); then
+            if [ "$checked_out" = false ]; then
+              if ! { cp scripts/release "$RUNNER_TEMP/release" &&
+                     git fetch --quiet origin "$SHA" && git checkout --quiet --detach "$SHA"; }; then
+                echo "::error::could not check out $SHA to judge its version"
+                exit 1
+              fi
+              checked_out=true
+            fi
+            raised=0
+            why=$(sh "$RUNNER_TEMP/release" raised main 2>&1 >/dev/null) || raised=$?
+            if [ "$raised" = 1 ]; then
+              # One comment per head commit, however often its success is reported.
+              body="Not merged at $SHA, since main moved on after this pull request was built: $why"
+              if ! seen=$(gh api --paginate "repos/$GH_REPO/issues/$pr/comments" --jq '.[].body'); then
+                echo "::error::#$pr: held, but its comments could not be read"
+                failed=1
+              elif ! grep -qF "Not merged at $SHA," <<<"$seen" && ! gh pr comment "$pr" --body "$body"; then
+                echo "::error::#$pr: held, but the comment saying why failed"
+                failed=1
+              fi
               echo "#$pr: held, its version is not raised over main's: $why"
-              gh pr comment "$pr" --body "Not merged: main moved on since this pull request was built. $why" ||
-                { echo "::error::#$pr: held, but the comment saying why failed"; failed=1; }
+              continue
+            elif [ "$raised" != 0 ]; then
+              echo "::error::#$pr: could not judge its version: $why"
+              failed=1
               continue
             fi
             if ! gh pr merge "$pr" --merge --match-head-commit "$SHA"; then
