@@ -9,6 +9,7 @@ from importlib import metadata
 from typing import Protocol
 
 import requests
+from bs4 import BeautifulSoup
 
 # What the scraped sites see by default: some refuse clients that are not a browser.
 BROWSER_USER_AGENT = (
@@ -31,6 +32,17 @@ def hyprmuse_user_agent() -> str:
     except metadata.PackageNotFoundError:
         product = "hyprmuse"
     return f"{product} (https://github.com/DavidSiegl/hyprmuse)"
+
+
+def parse_html(html: str) -> BeautifulSoup:
+    """Parse a scraped page into a BeautifulSoup tree.
+
+    Every source that scrapes HTML parses it here, so that all of them use
+    Python's own html.parser and none brings lxml back into the binary;
+    packaging/licenses/README.md says why lxml is out. Never raises on
+    malformed markup: html.parser repairs what it can and keeps the rest as text.
+    """
+    return BeautifulSoup(html, "html.parser")
 
 
 class SourceError(RuntimeError):

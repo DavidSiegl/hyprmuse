@@ -29,6 +29,11 @@ uv run --frozen --group build pyinstaller --onefile --name "$name" --noconfirm -
 contents=$(uv run --frozen --group build pyi-archive_viewer -r -b "$bin")
 printf '%s\n' "$contents" | grep -q "^ *certifi/cacert.pem" \
     || { echo "build-binary.sh: $bin bundles no certifi/cacert.pem" >&2; exit 1; }
+# bs4 imports lxml whenever it is installed, so a dependency or a stale venv that brings it back would bundle
+# it again unnoticed; packaging/licenses/README.md says why it must stay out.
+if printf '%s\n' "$contents" | grep -q "^ *lxml/"; then
+    echo "build-binary.sh: $bin bundles lxml" >&2; exit 1
+fi
 
 printf '%s\n' "$contents" | uv run --frozen --group build python packaging/third_party_notices.py \
     > dist/hyprmuse-third-party-licenses.txt

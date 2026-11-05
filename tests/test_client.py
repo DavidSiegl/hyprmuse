@@ -1,4 +1,4 @@
-"""base.Client: request spacing and error reporting."""
+"""base: the Client's request spacing and error reporting, its User-Agent, and parse_html."""
 
 import pytest
 import requests
@@ -141,3 +141,9 @@ def test_hyprmuse_agent_without_package_metadata(monkeypatch):
         raise base.metadata.PackageNotFoundError(name)
     monkeypatch.setattr(base.metadata, "version", missing)
     assert base.hyprmuse_user_agent() == "hyprmuse (https://github.com/DavidSiegl/hyprmuse)"
+
+
+def test_parse_html_uses_html_parser_even_with_lxml_installed():
+    # bs4 prefers lxml whenever it is importable, as it is in a venv left over
+    # from before lxml was dropped; parse_html must not follow it.
+    assert base.parse_html("<p>x</p>").builder.NAME == "html.parser"

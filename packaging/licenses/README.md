@@ -34,5 +34,10 @@ When the script refuses a build, or before raising the Python version:
 
 A new dependency whose wheels link C libraries of their own needs their notices here
 too: the script reads only Python distributions' license files and cannot see them.
-hyprmuse dropped lxml on 2026-11-05 for that reason, since its wheels link GNU libiconv
-(LGPL-2.1) statically.
+
+A notice is not always enough. hyprmuse dropped lxml on 2026-11-05 because its wheels
+link GNU libiconv (LGPL-2.1) statically into `lxml/etree.so`, and in a one-file binary
+that cannot be relinked against a modified libiconv, as the LGPL lets a user do; adding
+its notice back would not change that. HTML is parsed with Python's own html.parser
+instead (`parse_html` in `hyprmuse/sources/base.py`), and `build-binary.sh` refuses a
+binary that bundles lxml.
