@@ -134,28 +134,6 @@ author with nine quotes.
 
 Harvested text lives outside the repository, so scraped content stays out of git.
 
-## Development
-
-```bash
-uv run pytest               # the tests
-scripts/gate origin/main    # the tests with coverage, then octoflow-ai's quality gate on
-                            # the change since origin/main, as Jenkins runs it; writes quality.md
-```
-
-Opening a pull request hands it over: once Jenkins passes it, one that changes only the
-package's or the tests' Python, or Markdown, merges into `main` without a human.
-`docs/agents/README.md` has the exact rule and how to hold a pull request back.
-
-A merge into `main` that raises `version` in `pyproject.toml` releases it: Jenkins builds
-the binary with `packaging/build-binary.sh` and publishes it as release `v<version>`.
-The Jenkins job `hyprmuse-pypi` (`packaging/pypi/Jenkinsfile`) then builds that release's
-tag on a trusted node and uploads the sdist and wheel to PyPI, and `hyprmuse-aur`
-(`packaging/aur/Jenkinsfile`) pushes the AUR's `hyprmuse-bin` to that release with
-`packaging/aur/publish.sh`. To change the AUR package itself between releases, edit
-`packaging/aur/PKGBUILD`, run `packaging/aur/update.sh` with the latest released version,
-raise `pkgrel`, and run `update.sh` again to refresh `.SRCINFO`. Once merged, the change
-reaches the AUR on the job's next run, after the next build of `main` or within a day.
-
 ## License
 
 MIT; see `LICENSE`. The release binary also bundles Python, the packages hyprmuse
