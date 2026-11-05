@@ -1,5 +1,6 @@
 """On-disk store: one JSON file per subject under the XDG data directory."""
 
+import hashlib
 import json
 import os
 import re
@@ -26,11 +27,40 @@ def subject_key(source: str, source_id: str) -> str:
 
 
 def subject_path(source: str, source_id: str) -> Path:
-    return config.SUBJECTS_DIR / f"{source}--{slugify(source_id)}.json"
+    """The file the subject ``source``/``source_id`` is saved to.
+
+    The name is ``<source>--<slug>-<hash>.json``: the slug keeps it readable,
+    and the hash, of the exact id, keeps ids that slugify alike (any two
+    titles in a non-Latin script, say) in separate files.
+    """
+    digest = hashlib.sha256(source_id.encode("utf-8")).hexdigest()[:10]
+    return config.SUBJECTS_DIR / f"{source}--{slugify(source_id)}-{digest}.json"
+
+
+def _drop_old_file(source: str, source_id: str) -> bool:
+    """Delete the subject's file from before 1.0, if one is stored.
+
+    Releases before 1.0 saved a subject as ``<source>--<slug>.json``, a name
+    ids that slugify alike shared, so the file is deleted only if it holds
+    this very subject. Returns whether it was deleted.
+    """
+    path = config.SUBJECTS_DIR / f"{source}--{slugify(source_id)}.json"
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        if (stored["source"], stored["source_id"]) != (source, source_id):
+            return False
+        path.unlink()
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return True
 
 
 def save(subject: Subject) -> Path:
-    """Write a subject atomically so a crash can never truncate the store."""
+    """Write a subject to ``subject_path``, atomically so a crash cannot truncate it.
+
+    Replaces the subject's earlier file, including one under its name from
+    before 1.0. Returns the path written.
+    """
     config.SUBJECTS_DIR.mkdir(parents=True, exist_ok=True)
     path = subject_path(subject.source, subject.source_id)
     payload = {
@@ -57,6 +87,7 @@ def save(subject: Subject) -> Path:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+    _drop_old_file(subject.source, subject.source_id)
     return path
 
 
@@ -104,8 +135,13 @@ def find(token: str) -> list[Subject]:
 
 
 def remove(subject: Subject) -> bool:
+    """Delete the subject's stored file; returns whether there was one.
+
+    A file under its name from before 1.0 counts too.
+    """
     path = subject_path(subject.source, subject.source_id)
+    dropped_old = _drop_old_file(subject.source, subject.source_id)
     if path.exists():
         path.unlink()
         return True
-    return False
+    return dropped_old

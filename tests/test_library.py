@@ -86,3 +86,52 @@ def test_remove_deletes_the_file():
 
 def test_subject_key_format():
     assert library.subject_key("wikiquote", "de:X") == "wikiquote:de:X"
+
+
+def wikiquote(source_id, name):
+    return make_subject(source="wikiquote", source_id=source_id, name=name, domain="quotations")
+
+
+def test_ids_that_slugify_the_same_are_stored_apart():
+    """Regression (#9): non-Latin titles slugify to nothing and shared one file."""
+    library.save(wikiquote("ru:Лев Толстой", "Лев Толстой"))
+    library.save(wikiquote("ru:Фёдор Достоевский", "Фёдор Достоевский"))
+    assert sorted(s.name for s in library.load_all()) == ["Лев Толстой", "Фёдор Достоевский"]
+
+
+def store_under_old_name(subject):
+    """Save ``subject`` as hyprmuse before 1.0 did: <source>--<slug>.json."""
+    path = library.save(subject)
+    old = config.SUBJECTS_DIR / f"{subject.source}--{library.slugify(subject.source_id)}.json"
+    path.rename(old)
+    return old
+
+
+def test_a_subject_stored_under_its_old_name_still_loads():
+    store_under_old_name(make_subject(name="Old Timer"))
+    assert [s.name for s in library.load_all()] == ["Old Timer"]
+
+
+def test_saving_a_subject_stored_under_its_old_name_leaves_one_file():
+    old = store_under_old_name(make_subject(n_items=2))
+    library.save(make_subject(n_items=5))
+    assert not old.exists()
+    assert [len(s.items) for s in library.load_all()] == [5]
+
+
+def test_removing_a_subject_stored_under_its_old_name_deletes_it():
+    subject = make_subject()
+    store_under_old_name(subject)
+    assert library.remove(subject) is True
+    assert library.load_all() == []
+
+
+def test_an_old_name_file_holding_another_subject_is_left_alone():
+    # Before 1.0 both ids below mapped to wikiquote--ru.json.
+    old = store_under_old_name(wikiquote("ru:Лев Толстой", "Лев Толстой"))
+    dostoevsky = wikiquote("ru:Фёдор Достоевский", "Фёдор Достоевский")
+    library.save(dostoevsky)
+    assert library.remove(dostoevsky) is True
+    assert library.remove(dostoevsky) is False
+    assert old.exists()
+    assert [s.name for s in library.load_all()] == ["Лев Толстой"]
