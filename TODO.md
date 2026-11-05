@@ -46,6 +46,27 @@ None recorded yet.
   `** Źródło: …` and `** Zobacz też: …` under a quote; when a quote has no `Źródło`,
   `wikiquote._read_bullet` takes the first sub-bullet, so `--note` shows "Zobacz też:
   …". Closed by skipping sub-bullets that only link related pages.
+- **Combined bibliography headings count as the subject's own words.** The bibliography
+  words in `wikiquote._NOT_THEIR_WORDS` ("notes", "références", "ссылки"…) must be the
+  whole heading, since they also open titles of the subject's works ("Notes on
+  Nursing"). So "Notes et références" (153 fr pages on 2026-11-05), "Notes and
+  references", "Notas y referencias" and "Ссылки и примечания" are read. On the six
+  live pages checked those sections hold only the footnote list, so nothing is stored;
+  a page that puts bullets there would store them as quotes. Review 19, round 2. Closed
+  by also matching two bibliography words joined by "and"/"et"/"y"/"и" as a whole
+  heading.
+- **A title ending in a suffix takes the suffix as the surname.** `wikiquote._names_subject`
+  takes the title's last word outside parentheses, so for "Martin Luther King Jr." a
+  heading "About King" is not recognised as about the subject, and its quotes are stored
+  as the subject's own. en heads such sections "Quotes about …", which `_NOT_THEIR_WORDS` skips
+  anyway. Review 19, round 2. Closed by dropping suffixes such as "Jr.", "Sr." and roman
+  numerals before taking the last word.
+- **Narration after a quote ending in "?" or "!" becomes its source.**
+  `wikiquote._split_quote_and_note` treats text after a closing mark as the source
+  whenever the quote ends a sentence, so `"Why?" he asked, …` stores "he asked, …" as
+  the note. Review 19, round 2. Closed by requiring the source to look like one (a
+  dash, a parenthesis, or a work or name) rather than accepting any text after a
+  sentence-ending quote.
 - **Names without a hash are moved only when their subject is next saved or removed.**
   Review 18, F4: "compatibility is attached to `save` and `remove` rather than done once",
   so `library._unhashed_file` stays in both paths, and any new write or delete path must
