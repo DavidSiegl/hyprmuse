@@ -172,3 +172,26 @@ def test_quote_max_chars_holds_even_when_nothing_fits(capsys):
     assert code == 0
     assert sum(len(ln) for ln in body) <= 30
     assert body[-1].endswith("…")
+
+
+def test_update_all_goes_on_after_a_source_answers_garbage(capsys, monkeypatch,
+                                                           fake_client, fake_response):
+    from hyprmuse import sources
+    from hyprmuse.sources import gutenberg, wikiquote
+    garbage = fake_client({
+        fake_client.url("https://en.wikiquote.org/w/api.php", {
+            "action": "parse", "page": "Somebody", "prop": "wikitext", "format": "json"}):
+        fake_response(text="<html>maintenance</html>")})
+    books = fake_client({f"{gutenberg.BASE}/cache/epub/22367/pg22367.txt":
+                         fake_response(text=EBOOK)})
+    monkeypatch.setitem(sources.REGISTRY, "wikiquote", wikiquote.Wikiquote(garbage))
+    monkeypatch.setitem(sources.REGISTRY, "gutenberg", gutenberg.Gutenberg(books))
+    library.save(make_subject(source="wikiquote", source_id="en:Somebody",
+                              name="Somebody", domain="quotations"))
+    library.save(make_subject(source="gutenberg", source_id="22367", name="Franz Kafka",
+                              domain="prose", items=[Item(lines=["old"], atomic=True)]))
+    code, out = run(["update", "--all"], capsys)
+    assert code == 0
+    assert "failed" in out.err
+    kafka = next(s for s in library.load_all() if s.source == "gutenberg")
+    assert kafka.items[0].lines != ["old"]

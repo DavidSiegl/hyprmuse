@@ -3,7 +3,7 @@
 import difflib
 
 from ..text import mark_stanzas
-from .base import Candidate, Client, Item, SourceError, Subject
+from .base import Candidate, Client, Item, SourceError, Subject, reading
 
 API = "https://poetrydb.org"
 
@@ -18,7 +18,10 @@ class PoetryDB:
         self._client = client
 
     def _authors(self) -> list[str]:
-        return self._client.get(f"{API}/author").json().get("authors", [])
+        url = f"{API}/author"
+        body = self._client.json(url)
+        with reading(self.name, url):
+            return [str(a) for a in body.get("authors", [])]
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
         authors = self._authors()
@@ -38,16 +41,17 @@ class PoetryDB:
         url = f"{API}/author/{name.replace(' ', '%20')}"
         if progress:
             progress(f"fetching poems by {name}")
-        resp = self._client.get(f"{API}/author/{source_id}/title,author,lines")
-        poems = resp.json()
+        api_url = f"{API}/author/{source_id}/title,author,lines"
+        poems = self._client.json(api_url)
         if isinstance(poems, dict):  # PoetryDB reports misses as {"status":404,...}
             raise SourceError(f"poetrydb: no poems for {name}")
         items = []
-        for poem in poems:
-            lines = mark_stanzas(poem.get("lines", []))  # blanks = stanza breaks
-            if lines:
-                items.append(Item(lines=lines, work=poem.get("title", ""),
-                                  url=url, atomic=False))
+        with reading(self.name, api_url):
+            for poem in poems:
+                lines = mark_stanzas(poem.get("lines", []))  # blanks = stanza breaks
+                if lines:
+                    items.append(Item(lines=lines, work=poem.get("title", ""),
+                                      url=url, atomic=False))
         if not items:
             raise SourceError(f"poetrydb: no usable poems for {name}")
         return Subject(
