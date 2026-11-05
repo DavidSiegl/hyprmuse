@@ -92,7 +92,7 @@ def cmd_list(args) -> int:
         total += len(s.items)
         kind = "atomic" if s.items and s.items[0].atomic else "sliceable"
         print(f"{s.name:{width}}  {len(s.items):5} items  {s.domain:11} "
-              f"{s.lang:3} {kind:10} {library.subject_key(s.source, s.source_id)}")
+              f"{s.lang:3} {kind:10} {s.key}")
     print(f"\n{len(subjects)} subjects, {total} items total")
     return 0
 
@@ -102,7 +102,7 @@ def cmd_remove(args) -> int:
     if not matches:
         return _err(f"no subject matching {args.token!r}")
     if len(matches) > 1:
-        names = ", ".join(library.subject_key(m.source, m.source_id) for m in matches)
+        names = ", ".join(m.key for m in matches)
         return _err(f"{args.token!r} is ambiguous: {names}")
     subject = matches[0]
     library.remove(subject)
@@ -111,7 +111,9 @@ def cmd_remove(args) -> int:
 
 
 def cmd_update(args) -> int:
-    targets = library.load_all() if args.all else library.find(args.token or "")
+    if not args.all and not args.token:
+        return _err("name a subject or pass --all")
+    targets = library.load_all() if args.all else library.find(args.token)
     if not targets:
         return _err("nothing to update")
     failed = 0
@@ -185,8 +187,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_remove)
 
     sp = sub.add_parser("update", help="re-harvest stored subjects")
-    sp.add_argument("token", nargs="?", default="")
-    sp.add_argument("--all", action="store_true")
+    sp.add_argument("token", nargs="?", default="", help="source:id or part of the name")
+    sp.add_argument("--all", action="store_true", help="re-harvest every stored subject")
     sp.set_defaults(func=cmd_update)
 
     sp = sub.add_parser("sources", help="list available sources")

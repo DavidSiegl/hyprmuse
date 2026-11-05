@@ -169,3 +169,60 @@ def test_quote_max_chars_holds_even_when_nothing_fits(capsys):
     assert code == 0
     assert sum(len(ln) for ln in body) <= 30
     assert body[-1].endswith("…")
+
+
+# A token that is one subject's key and part of another's name.
+TOKEN = "genius:2"
+
+
+def store_key_and_name_lookalikes():
+    library.save(make_subject(source_id="2", name="Keyed"))
+    library.save(make_subject(source_id="3", name=f"Tribute to {TOKEN}"))
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_quote_subject_takes_the_subject_whose_key_the_token_is(capsys, seed):
+    store_key_and_name_lookalikes()
+    code, out = run(["quote", "--subject", TOKEN, "--seed", str(seed)], capsys)
+    assert code == 0 and "— Keyed" in out.out
+
+
+def test_remove_takes_the_subject_whose_key_the_token_is(capsys):
+    store_key_and_name_lookalikes()
+    code, out = run(["remove", TOKEN], capsys)
+    assert code == 0 and "Removed Keyed" in out.out
+    assert [s.name for s in library.load_all()] == [f"Tribute to {TOKEN}"]
+
+
+@pytest.fixture
+def fetched(monkeypatch):
+    """The ids update asks Genius to fetch; Genius answers each with a fresh subject."""
+    from hyprmuse import sources
+    ids = []
+
+    class Recorder:
+        def fetch(self, source_id, progress=None):
+            ids.append(source_id)
+            return make_subject(source_id=source_id, name="Fresh")
+
+    monkeypatch.setitem(sources.REGISTRY, "genius", Recorder())
+    return ids
+
+
+def test_update_takes_the_subject_whose_key_the_token_is(capsys, fetched):
+    store_key_and_name_lookalikes()
+    code, _ = run(["update", TOKEN], capsys)
+    assert code == 0 and fetched == ["2"]
+
+
+def test_update_without_a_token_or_all_names_what_to_do(capsys, fetched):
+    library.save(make_subject())
+    code, out = run(["update"], capsys)
+    assert code == 1 and "name a subject or pass --all" in out.err
+    assert fetched == []
+
+
+def test_remove_with_an_empty_token_removes_nothing(capsys):
+    library.save(make_subject())
+    code, _ = run(["remove", ""], capsys)
+    assert code == 1 and len(library.load_all()) == 1

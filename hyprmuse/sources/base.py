@@ -60,6 +60,15 @@ class Subject:
     items: list[Item] = field(default_factory=list)
     attribution: dict = field(default_factory=dict)
 
+    @property
+    def key(self) -> str:
+        """``source:source_id``, which names this subject to the user.
+
+        `hyprmuse list` shows it, a token on the command line can be it, and
+        config.toml's ``[subjects."<key>"]`` tables are keyed by it.
+        """
+        return f"{self.source}:{self.source_id}"
+
 
 class Source(Protocol):
     """A provider of quotable subjects, registered in ``sources.REGISTRY``.
