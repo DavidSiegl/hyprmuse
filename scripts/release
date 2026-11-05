@@ -16,14 +16,22 @@
 #       auto-merge again right before merging, since publish releases a merge into main
 #       only when its version has no release yet, so a merge that kept main's version
 #       would go unreleased.
+#   scripts/release due
+#       Exit 0 when HEAD's release version has no GitHub release yet, 1 when it has one,
+#       saying which on standard output; exit 2 on any error, among them a version below
+#       the latest release and gh failing for any reason but a missing release. Needs gh
+#       with GH_TOKEN, as publish does. CI runs it on main first, and only on 0 runs the
+#       repo's scripts/package and then publish, so a merge that releases nothing builds
+#       nothing.
 #   scripts/release publish
 #       Create GitHub release v<version> at HEAD with gh (GH_TOKEN must allow it), unless
-#       it exists. When the repo has scripts/package, run it first, without GH_TOKEN or
-#       GITHUB_TOKEN in its environment, and attach every file it leaves directly in
-#       dist/release/. Fails, creating nothing, when the version is below the latest
-#       release; when scripts/package fails, leaves no file, or leaves a directory or a
-#       name with a `#` (which gh reads as a label) in dist/release/; or when gh fails
-#       for any reason but a missing release.
+#       it exists. When the repo has scripts/package, attach every file directly in
+#       dist/release/: the caller runs scripts/package first, in this tree and with no
+#       token anywhere in its process tree, since packaging runs build tools and their
+#       dependencies, and a token in any ancestor's environment is readable through
+#       /proc. Fails, creating nothing, where due fails; and, with scripts/package, when
+#       dist/release/ holds no file, a directory, or a name with a `#` (which gh reads as
+#       a label).
 #
 # The release version is pyproject.toml's [project] version, read at the commit (HEAD,
 # TARGET), not from the work tree. Versions compare release number by release number,
@@ -57,7 +65,7 @@ Jenkinsfile
 .release-exempt'
 
 usage() {
-    echo "usage: scripts/release changed BASE | raised TARGET | publish" >&2
+    echo "usage: scripts/release changed BASE | raised TARGET | due | publish" >&2
     exit 2
 }
 
@@ -189,10 +197,10 @@ raised() {
     fi
 }
 
-publish() {
-    version=$(version_at HEAD)
-    tag="v$version"
-    err=$(mktemp)
+# Returns 0 when release v$version is due, as `due` says, 1 when it exists; exits 2 on
+# any other outcome, saying why.
+is_due() {
+    err=$(mktemp) || fail "cannot make a temporary file"
     trap 'rm -f "$err"' EXIT
 
     # Prints the tag of release $1, or of the latest with no argument. Returns 0 for a
@@ -208,28 +216,41 @@ publish() {
     }
 
     found=0
-    release_tag "$tag" >/dev/null || found=$?
+    release_tag "v$version" >/dev/null || found=$?
     case $found in
-        0) echo "$tag is already released"; exit 0 ;;
+        0) return 1 ;;
         1) ;;
-        *) exit 1 ;;
+        *) exit 2 ;;
     esac
     found=0
     latest=$(release_tag) || found=$?
-    [ "$found" -le 1 ] || exit 1
+    [ "$found" -le 1 ] || exit 2
     if [ -n "$latest" ] && version_greater "${latest#v}" "$version"; then
-        echo "scripts/release: pyproject.toml's version $version is below the latest" \
-            "release $latest" >&2
+        fail "pyproject.toml's version $version is below the latest release $latest"
+    fi
+}
+
+due() {
+    version=$(version_at HEAD)
+    if is_due; then
+        echo "v$version is due for release"
+    else
+        echo "v$version is already released"
         exit 1
     fi
+}
 
-    # The assets: what scripts/package leaves in dist/release/, built here rather than
-    # taken from an earlier stage, so that what is released is what HEAD builds.
-    # Packaging runs build tools and their dependencies, none of which needs the release
-    # token, so they never see it.
+publish() {
+    version=$(version_at HEAD)
+    tag="v$version"
+    if ! is_due; then
+        echo "$tag is already released"
+        exit 0
+    fi
+
+    # The assets: what scripts/package, run by the caller (the header), left.
     set --
     if [ -e scripts/package ]; then
-        (unset GH_TOKEN GITHUB_TOKEN; exec scripts/package) || fail "scripts/package failed"
         set +f
         for f in dist/release/* dist/release/.[!.]* dist/release/..?*; do
             [ -e "$f" ] || [ -L "$f" ] || continue
@@ -238,7 +259,7 @@ publish() {
             set -- "$@" "$f"
         done
         set -f
-        [ $# -gt 0 ] || fail "scripts/package left no file in dist/release/"
+        [ $# -gt 0 ] || fail "dist/release/ holds no file; run scripts/package first"
     fi
     gh release create "$tag" "$@" --target "$(git rev-parse HEAD)" --title "$tag" \
         --generate-notes
@@ -247,6 +268,7 @@ publish() {
 case ${1:-} in
     changed) [ $# -eq 2 ] || usage; changed "$2" ;;
     raised) [ $# -eq 2 ] || usage; raised "$2" ;;
+    due) [ $# -eq 1 ] || usage; due ;;
     publish) [ $# -eq 1 ] || usage; publish ;;
     *) usage ;;
 esac

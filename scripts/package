@@ -4,9 +4,9 @@
 # (packaging/build-binary.sh). Also builds the sdist and wheel into dist/, only so that a
 # change breaking them fails before it is merged: packaging/pypi/publish.sh builds what
 # PyPI gets on a trusted node, since the Jenkins agent that runs this runs unreviewed code.
-# Jenkins's Package stage runs it on a pull request that touches a released path, and
-# scripts/release publish runs it again right before it releases, attaching every file it
-# leaves in dist/release/.
+# Jenkins's Package stage runs it on a pull request that touches a released path, and its
+# Release stage again on main when the version is due, without the release token, right
+# before scripts/release publish attaches every file it leaves in dist/release/.
 set -eu
 cd "$(dirname "$0")/.."
 

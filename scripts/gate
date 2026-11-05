@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Run octoflow-ai's quality gate on this working tree: the tests with coverage, then
-# gate.py, which judges the change since BASE and writes quality.md at the repo root.
+# Run octoflow-ai's quality gate on this working tree: the tests with coverage (none for a
+# change to docs alone, below), then gate.py, which judges the change since BASE and
+# writes quality.md at the repo root.
 #
 #   scripts/gate [BASE]     BASE is any git revision; default main.
 #

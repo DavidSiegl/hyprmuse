@@ -1,9 +1,9 @@
 // Builds main and every pull request in a Multibranch Pipeline job and runs the quality
-// gate (scripts/gate) on each, failing the build on GATE:
-// ERROR or when the gate could not judge. For a pull request, Jenkins's GitHub App
-// reports the result as the commit status continuous-integration/jenkins/pr-head, which
-// auto-merge trusts only from that App, as does the ci-cd ruleset on main once
-// agent-estate's init/github-rules.py has set it.
+// gate (scripts/gate) on each, failing the build on GATE: ERROR or when the gate could
+// not judge. For a pull request, Jenkins's GitHub App reports the result as the commit
+// status continuous-integration/jenkins/pr-head, which auto-merge trusts only from that
+// App, as does the ci-cd ruleset on main once agent-estate's init/github-rules.py has set
+// it.
 // docs/agents/README.md says how a pull request then merges; the agent-estate README,
 // "Jenkins", says what the job and the agent need. Stages Version, Package and Release then
 // release each merge into main that raises the version: scripts/release says what and when.
@@ -104,15 +104,31 @@ pipeline {
         }
 
         // Releases a merge into main whose version has no release yet, packaging it first;
-        // any other merge finds its release there and does nothing (scripts/release
-        // publish). gh creates the tag on GitHub, so Jenkins needs no git push credentials.
-        // The credential is bound on the agent that builds agents' pull requests: it must be
-        // a token the agents already hold (the agent-estate README, "Releases").
+        // any other merge finds its release there and builds nothing (scripts/release due
+        // and publish). scripts/package runs outside withCredentials, so no process above
+        // it holds the token. gh creates the tag on GitHub, so Jenkins needs no git push
+        // credentials. The credential is bound on the agent that builds agents' pull
+        // requests: it must be a token the agents already hold (the agent-estate README,
+        // "Releases").
         stage('Release') {
             when { branch 'main' }
             steps {
-                withCredentials([string(credentialsId: 'GitHub-Agents', variable: 'GH_TOKEN')]) {
-                    sh 'scripts/release publish'
+                script {
+                    def due
+                    withCredentials([string(credentialsId: 'GitHub-Agents', variable: 'GH_TOKEN')]) {
+                        due = sh(returnStatus: true, script: 'scripts/release due')
+                    }
+                    if (due == 1) {
+                        return
+                    } else if (due != 0) {
+                        error("scripts/release due failed (exit status ${due})")
+                    }
+                    if (fileExists('scripts/package')) {
+                        sh 'scripts/package'
+                    }
+                    withCredentials([string(credentialsId: 'GitHub-Agents', variable: 'GH_TOKEN')]) {
+                        sh 'scripts/release publish'
+                    }
                 }
             }
         }
