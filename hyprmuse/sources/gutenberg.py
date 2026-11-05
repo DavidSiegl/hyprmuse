@@ -10,7 +10,7 @@ import re
 
 from bs4 import BeautifulSoup
 
-from .base import Candidate, Item, Source, SourceError, Subject, get
+from .base import Candidate, Client, Item, SourceError, Subject
 
 BASE = "https://www.gutenberg.org"
 MAX_PASSAGES = 300  # per book, keeps the stored file small and varied
@@ -79,9 +79,12 @@ class Gutenberg:
     domain = "prose"
     produces_atomic = True
 
+    def __init__(self, client: Client):
+        """``client`` makes every request this source sends."""
+        self._client = client
+
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
-        resp = get(f"{BASE}/ebooks/search/", params={"query": query},
-                   key="gutenberg", throttle=1.0)
+        resp = self._client.get(f"{BASE}/ebooks/search/", params={"query": query})
         soup = BeautifulSoup(resp.text, "lxml")
         out = []
         for link in soup.select("li.booklink a.link"):
@@ -113,7 +116,7 @@ class Gutenberg:
                         f"{BASE}/files/{book_id}/{book_id}-0.txt",
                         f"{BASE}/ebooks/{book_id}.txt.utf-8"):
             try:
-                resp = get(txt_url, key="gutenberg", throttle=1.0)
+                resp = self._client.get(txt_url)
             except SourceError as exc:
                 last_err = exc
                 continue
@@ -139,4 +142,4 @@ class Gutenberg:
         raise SourceError(f"could not retrieve ebook {book_id}: {last_err}")
 
 
-SOURCE = Gutenberg()
+SOURCE = Gutenberg(Client(gap=1.0))
