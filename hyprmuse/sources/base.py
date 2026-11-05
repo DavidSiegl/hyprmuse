@@ -37,6 +37,14 @@ class SourceError(RuntimeError):
     """A source could not fulfil a search or fetch."""
 
 
+class NotFound(SourceError):
+    """The provider answered that what was asked for does not exist (HTTP 404).
+
+    Unlike other SourceErrors, this is an answer, not a failure to get one:
+    asking again will not change it.
+    """
+
+
 @contextmanager
 def reading(source: str, url: str) -> Iterator[None]:
     """Report a reply from ``url`` that does not have the shape ``source`` expects.
@@ -150,8 +158,9 @@ class Client:
     def get(self, url: str, params: dict | None = None) -> requests.Response:
         """GET ``url`` with ``params`` as its query string, after waiting out the gap.
 
-        Returns the response when the status is 200. Raises SourceError when
-        the request fails (connection, timeout) or the status is anything else.
+        Returns the response when the status is 200. Raises NotFound on a 404,
+        and SourceError when the request fails (connection, timeout) or the
+        status is anything else.
         """
         if self._last_end is not None:
             jitter = random.uniform(0.0, self._jitter)  # noqa: S311 - spacing, not secrecy
@@ -165,6 +174,8 @@ class Client:
             raise SourceError(f"request to {url} failed: {exc}") from exc
         finally:
             self._last_end = time.monotonic()
+        if resp.status_code == 404:
+            raise NotFound(f"{url} returned HTTP 404")
         if resp.status_code != 200:
             raise SourceError(f"{url} returned HTTP {resp.status_code}")
         return resp

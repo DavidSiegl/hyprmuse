@@ -1,6 +1,9 @@
 """The Genius boilerplate cleaner - the part with a real bug history."""
 
+import pytest
+
 from hyprmuse.sources import genius
+from hyprmuse.sources.base import SourceError
 from hyprmuse.sources.genius import clean_lines
 
 SONG_LINES = [
@@ -182,3 +185,29 @@ def test_search_offers_only_artist_hits_with_an_id(fake_client, fake_response):
     ]}})})
     hits = genius.Genius(client).search("element")
     assert [(h.source_id, h.name) for h in hits] == [("7", "Element of Crime")]
+
+
+def test_fetch_skips_a_song_genius_has_no_page_for(fake_client, fake_response):
+    client = fake_client({
+        songs_url(fake_client, 1): fake_response(
+            {"response": {"next_page": None, "songs": [song("gone"), song("kept")]}}),
+        "https://genius.com/kept": fake_response(text=PAGE),
+    })
+    subject = genius.Genius(client).fetch("7")
+    assert [i.work for i in subject.items] == ["kept"]
+
+
+@pytest.mark.parametrize("failure", [
+    SourceError("https://genius.com/first returned HTTP 429"),
+    SourceError("request to https://genius.com/first failed: connection reset"),
+])
+def test_fetch_fails_when_a_song_request_fails(fake_client, fake_response, failure):
+    """A partial harvest would replace the stored subject with fewer songs (#12)."""
+    client = fake_client({
+        songs_url(fake_client, 1): fake_response(
+            {"response": {"next_page": None, "songs": [song("first"), song("second")]}}),
+        "https://genius.com/first": failure,
+        "https://genius.com/second": fake_response(text=PAGE),
+    })
+    with pytest.raises(SourceError, match="genius.com/first"):
+        genius.Genius(client).fetch("7")

@@ -4,7 +4,7 @@ import pytest
 import requests
 
 from hyprmuse import config
-from hyprmuse.sources.base import Item, SourceError, Subject
+from hyprmuse.sources.base import Item, NotFound, SourceError, Subject
 
 
 @pytest.fixture(autouse=True)
@@ -44,8 +44,9 @@ class FakeClient:
     """Stands in for a source's ``base.Client``, answering from canned responses.
 
     ``routes`` maps a full URL (see ``url``) to the FakeResponse to return for
-    it. A URL with no route raises SourceError, as an HTTP error would.
-    ``requested`` lists every full URL asked for, in order.
+    it, or to a SourceError to raise in its place. A URL with no route raises
+    NotFound, as an HTTP 404 would. ``requested`` lists every full URL asked
+    for, in order.
     """
 
     def __init__(self, routes):
@@ -61,8 +62,11 @@ class FakeClient:
         url = self.url(url, params)
         self.requested.append(url)
         if url not in self.routes:
-            raise SourceError(f"{url} returned HTTP 404")
-        return self.routes[url]
+            raise NotFound(f"{url} returned HTTP 404")
+        reply = self.routes[url]
+        if isinstance(reply, SourceError):
+            raise reply
+        return reply
 
 
 def make_subject(source="genius", source_id="1", name="Test Subject",

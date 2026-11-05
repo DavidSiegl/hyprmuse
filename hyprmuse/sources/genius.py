@@ -6,7 +6,7 @@ import re
 from bs4 import BeautifulSoup
 
 from ..text import mark_stanzas
-from .base import Candidate, Client, Item, SourceError, Subject, reading
+from .base import Candidate, Client, Item, NotFound, SourceError, Subject, reading
 
 API = "https://genius.com/api"
 
@@ -171,9 +171,15 @@ class Genius:
         return artist, songs
 
     def _lyrics(self, url: str) -> str | None:
+        """The lyrics on the song page at ``url``; None when it has none.
+
+        A song without a page (HTTP 404) has none. Any other failure raises
+        SourceError, so a rate limit or an outage fails the whole harvest
+        instead of silently leaving those songs out of it.
+        """
         try:
             resp = self._client.get(url)
-        except SourceError:
+        except NotFound:
             return None
         return lyrics_text(resp.text)
 
