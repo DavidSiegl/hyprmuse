@@ -83,7 +83,7 @@ def test_poetrydb_miss_is_reported_as_no_poems(answer):
 def test_a_bug_in_parsing_wikitext_is_not_blamed_on_wikiquote(answer, monkeypatch):
     from hyprmuse.sources import wikiquote
 
-    def broken(_):
+    def broken(wikitext, title):
         raise IndexError("bug")
 
     monkeypatch.setattr(wikiquote, "parse_wikitext", broken)

@@ -26,7 +26,7 @@ def quote(cfg: dict, *, subject: str = "", domain: str = "", source: str = "",
     per-subject ``enabled``/``weight`` table. A caller overriding a setting
     replaces its key before the call.
 
-    ``subject`` (a name substring or a ``source:id`` key), ``domain`` and
+    ``subject`` (a token, resolved by ``library.find``), ``domain`` and
     ``source`` restrict which stored subjects are drawn from; empty means any.
     ``seed`` makes the draw deterministic and leaves the repeat history alone.
     ``show_note`` appends the item's citation note, when it has one.
@@ -46,16 +46,14 @@ def quote(cfg: dict, *, subject: str = "", domain: str = "", source: str = "",
         return None
     rng = random.Random(seed)
     recent = _load_recent()
-    keep = int(cfg.get("avoid_repeats", 20))
+    keep = cfg["avoid_repeats"]
     weights = [_weight(s, cfg) for s in pool]
     if sum(weights) <= 0:
         weights = [1.0] * len(pool)
-    fit = _Fit(width=int(cfg["width"]), max_lines=int(cfg["max_lines"]),
-               max_chars=int(cfg["max_chars"]))
+    fit = _Fit(width=cfg["width"], max_lines=cfg["max_lines"], max_chars=cfg["max_chars"])
 
-    draw = dict(num_lines=int(cfg["lines"]),
-                min_chars=int(cfg.get("min_line_chars", 0)),
-                recent=recent if keep > 0 else [])
+    draw = {"num_lines": cfg["lines"], "min_chars": cfg["min_line_chars"],
+            "recent": recent if keep > 0 else []}
     chosen = _draw(pool, weights, rng, fit=fit, **draw)
     if chosen is None and fit != _UNCONSTRAINED:
         # Nothing in the library fits the box; a trimmed quote beats a blank
@@ -121,7 +119,7 @@ class _Pick:
 
     def fingerprint(self) -> str:
         """Identifies the quote in the repeat history; equal text, equal print."""
-        seed = f"{self.subject.source}:{self.subject.source_id}:" + "|".join(self.lines)
+        seed = f"{self.subject.key}:" + "|".join(self.lines)
         return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
 
 
@@ -136,10 +134,17 @@ def _render(pick: _Pick, fit: _Fit, *, show_note: bool) -> str:
 
 
 def _load_recent() -> list[str]:
+    """The repeat history's fingerprints, oldest first.
+
+    Empty when the file is missing, unreadable, or not a list of strings.
+    """
     try:
-        return json.loads(config.RECENT_FILE.read_text(encoding="utf-8"))
+        seen = json.loads(config.RECENT_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
+    if isinstance(seen, list) and all(isinstance(f, str) for f in seen):
+        return seen
+    return []
 
 
 def _save_recent(seen: list[str], keep: int) -> None:
@@ -154,30 +159,28 @@ def _candidates(cfg: dict, *, subject: str, domain: str,
                 source: str) -> list[Subject]:
     """Stored subjects with items, minus those disabled in config or filtered out."""
     out = []
-    for subj in library.load_all():
-        settings = cfg.get("subjects", {}).get(
-            library.subject_key(subj.source, subj.source_id), {})
-        if settings.get("enabled") is False:
+    for subj in library.find(subject) if subject else library.load_all():
+        if _settings(subj, cfg).get("enabled") is False:
             continue
         if domain and subj.domain != domain:
             continue
         if source and subj.source != source:
-            continue
-        if subject and subject.lower() not in subj.name.lower() \
-                and subject != library.subject_key(subj.source, subj.source_id):
             continue
         if subj.items:
             out.append(subj)
     return out
 
 
+def _settings(subj: Subject, cfg: dict) -> dict:
+    """The settings config.toml gives ``subj`` in ``[subjects."<key>"]``; {} if none."""
+    return cfg.get("subjects", {}).get(subj.key, {})
+
+
 def _weight(subj: Subject, cfg: dict) -> float:
-    settings = cfg.get("subjects", {}).get(
-        library.subject_key(subj.source, subj.source_id), {})
-    base = float(settings.get("weight", 1.0))
+    base = _settings(subj, cfg).get("weight", 1.0)
     # "quote" weighting makes every stored quote equally likely, so prolific
     # subjects dominate; "subject" (the default) gives each subject equal say.
-    return base * len(subj.items) if cfg.get("weighting") == "quote" else base
+    return base * len(subj.items) if cfg["weighting"] == "quote" else base
 
 
 def _extract(item: Item, num_lines: int, rng: random.Random, *,
