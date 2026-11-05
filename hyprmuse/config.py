@@ -1,6 +1,5 @@
 """XDG paths and user configuration."""
 
-import math
 import os
 import sys
 import tomllib
@@ -35,6 +34,10 @@ DEFAULTS = {
 LEAST = {"lines": 1, "width": 0, "max_lines": 0, "max_chars": 0,
          "avoid_repeats": 0, "min_line_chars": 0}
 
+# The most any number setting takes, per-subject weight included. It keeps
+# every sum the weighted draw makes finite.
+MOST = 1_000_000
+
 # The values "weighting" takes.
 WEIGHTINGS = ("subject", "quote")
 
@@ -44,8 +47,8 @@ def load_config() -> dict:
 
     Returns DEFAULTS' keys plus "subjects", which maps a subject key to the
     settings given for it: "enabled" (a bool; false leaves the subject out of
-    quotes) and "weight" (a float >= 0 scaling how often it is drawn), each
-    present only when set. Every value holds to LEAST and WEIGHTINGS, so
+    quotes) and "weight" (a float from 0 to MOST scaling how often it is drawn), each
+    present only when set. Every value holds to LEAST, MOST and WEIGHTINGS, so
     callers need not check it.
 
     A missing or unparsable file gives the defaults and no subject settings.
@@ -60,7 +63,7 @@ def load_config() -> dict:
         return cfg
     try:
         raw = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, ValueError):  # ValueError: not UTF-8, or not TOML
         return cfg
     cfg.update(_quote_settings(_table(raw.get("quote", {}), "[quote]")))
     for key, table in _table(raw.get("subjects", {}), "[subjects]").items():
@@ -84,7 +87,7 @@ def _quote_settings(given: dict) -> dict:
         elif (n := _number(given[key], LEAST[key])) is not None:
             settings[key] = int(n)
         else:
-            _ignore(f"[quote] {key}", given[key], f"a number >= {LEAST[key]}")
+            _ignore(f"[quote] {key}", given[key], f"a number from {LEAST[key]} to {MOST}")
     return settings
 
 
@@ -104,7 +107,7 @@ def _subject_settings(table, where: str) -> dict:
         if (n := _number(given["weight"], 0)) is not None:
             settings["weight"] = n
         else:
-            _ignore(f"{where} weight", given["weight"], "a number >= 0")
+            _ignore(f"{where} weight", given["weight"], f"a number from 0 to {MOST}")
     return settings
 
 
@@ -117,13 +120,13 @@ def _table(given, where: str) -> dict:
 
 
 def _number(given, least: float) -> float | None:
-    """``given`` as a float if it is a finite number >= ``least``, else None.
+    """``given`` as a float if it is a number from ``least`` to MOST, else None.
 
     A bool is not a number here, though Python makes it an int.
     """
     if isinstance(given, bool) or not isinstance(given, (int, float)):
         return None
-    if not math.isfinite(given) or given < least:
+    if not least <= given <= MOST:  # also false for nan
         return None
     return float(given)
 

@@ -64,7 +64,7 @@ def test_a_value_of_the_wrong_type_keeps_the_default_and_says_so(capsys):
     assert cfg["lines"] == 4
     assert cfg["subjects"]["genius:1"] == {"weight": 2}
     err = capsys.readouterr().err
-    assert "[quote] width = True is not a number >= 0" in err
+    assert "[quote] width = True is not a number from 0 to" in err
     assert '[subjects."genius:1"] enabled' in err
 
 
@@ -76,6 +76,8 @@ def test_a_value_of_the_wrong_type_keeps_the_default_and_says_so(capsys):
     ('[subjects."genius:1"]\nweight = inf\n', '[subjects."genius:1"] weight = inf'),
     ('[subjects."genius:1"]\nweight = nan\n', '[subjects."genius:1"] weight = nan'),
     ('[subjects."genius:1"]\nweight = -1\n', '[subjects."genius:1"] weight = -1'),
+    ('[subjects."genius:1"]\nweight = 1e308\n', '[subjects."genius:1"] weight = 1e+308'),
+    ("[quote]\nwidth = " + "9" * 400 + "\n", "[quote] width = 999"),
 ])
 def test_a_value_out_of_range_keeps_the_default_and_says_so(capsys, toml, named):
     _write(toml)
@@ -101,3 +103,9 @@ def test_a_section_that_is_not_a_table_is_ignored(capsys):
 def test_weighting_is_read():
     _write('[quote]\nweighting = "quote"\n')
     assert config.load_config()["weighting"] == "quote"
+
+
+def test_a_file_that_is_not_utf8_falls_back_to_defaults():
+    config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    config.CONFIG_FILE.write_bytes(b"[quote]\nlines = 4 # \xff\n")
+    assert config.load_config()["lines"] == config.DEFAULTS["lines"]
