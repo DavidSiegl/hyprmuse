@@ -2,7 +2,7 @@
 
 import pytest
 
-from hyprmuse import cli, library
+from hyprmuse import cli, config, library
 from hyprmuse.sources.base import Item
 from tests.conftest import make_subject
 
@@ -217,12 +217,51 @@ def test_update_takes_the_subject_whose_key_the_token_is(capsys, fetched):
 
 def test_update_without_a_token_or_all_names_what_to_do(capsys, fetched):
     library.save(make_subject())
-    code, out = run(["update"], capsys)
-    assert code == 1 and "name a subject or pass --all" in out.err
+    with pytest.raises(SystemExit):
+        run(["update"], capsys)
+    assert "one of the arguments token --all is required" in capsys.readouterr().err
     assert fetched == []
+
+
+def test_update_refuses_a_token_together_with_all(capsys, fetched):
+    library.save(make_subject())
+    with pytest.raises(SystemExit):
+        run(["update", "genius:1", "--all"], capsys)
+    assert "not allowed with argument token" in capsys.readouterr().err
+    assert fetched == []
+
+
+def test_update_all_reharvests_every_stored_subject(capsys, fetched):
+    library.save(make_subject(source_id="1", name="One"))
+    library.save(make_subject(source_id="2", name="Two"))
+    code, _ = run(["update", "--all"], capsys)
+    assert code == 0 and sorted(fetched) == ["1", "2"]
+
+
+def test_quote_whose_subjects_are_all_disabled_does_not_ask_to_add_one(capsys):
+    library.save(make_subject(source_id="2"))
+    config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    config.CONFIG_FILE.write_text('[subjects."genius:2"]\nenabled = false\n',
+                                  encoding="utf-8")
+    code, out = run(["quote", "--subject", "genius:2"], capsys)
+    assert code == 0 and "hyprmuse add" not in out.out
+    assert "No stored quote passes" in out.out
 
 
 def test_remove_with_an_empty_token_removes_nothing(capsys):
     library.save(make_subject())
     code, _ = run(["remove", ""], capsys)
     assert code == 1 and len(library.load_all()) == 1
+
+
+def test_search_prints_the_token_that_names_each_hit(capsys, monkeypatch):
+    from hyprmuse import sources
+    from hyprmuse.sources.base import Candidate
+
+    class OneHit:
+        def search(self, query, lang):
+            return [Candidate("genius", "7", "Hit", "music")]
+
+    monkeypatch.setitem(sources.REGISTRY, "genius", OneHit())
+    code, out = run(["search", "hit", "--source", "genius"], capsys)
+    assert code == 0 and "    genius:7" in out.out.splitlines()

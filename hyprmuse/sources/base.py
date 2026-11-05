@@ -31,6 +31,11 @@ class Candidate:
     domain: str
     hint: str = ""  # shown to the user when disambiguating
 
+    @property
+    def key(self) -> str:
+        """The ``Subject.key`` the subject will have once fetched."""
+        return _key(self.source, self.source_id)
+
 
 @dataclass
 class Item:
@@ -67,7 +72,12 @@ class Subject:
         `hyprmuse list` shows it, a token on the command line can be it, and
         config.toml's ``[subjects."<key>"]`` tables are keyed by it.
         """
-        return f"{self.source}:{self.source_id}"
+        return _key(self.source, self.source_id)
+
+
+def _key(source: str, source_id: str) -> str:
+    """The format of ``Subject.key`` and ``Candidate.key``, kept in one place."""
+    return f"{source}:{source_id}"
 
 
 class Source(Protocol):

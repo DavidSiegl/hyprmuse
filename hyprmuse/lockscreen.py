@@ -121,7 +121,7 @@ class _Pick:
 
     def fingerprint(self) -> str:
         """Identifies the quote in the repeat history; equal text, equal print."""
-        seed = f"{self.subject.source}:{self.subject.source_id}:" + "|".join(self.lines)
+        seed = f"{self.subject.key}:" + "|".join(self.lines)
         return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
 
 

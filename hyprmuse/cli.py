@@ -59,7 +59,7 @@ def cmd_search(args) -> int:
         return _err(f"no matches for {args.query!r}")
     for c in cands:
         hint = f"  ({c.hint})" if c.hint else ""
-        print(f"[{c.source}/{c.domain}] {c.name}{hint}\n    {c.source}:{c.source_id}")
+        print(f"[{c.source}/{c.domain}] {c.name}{hint}\n    {c.key}")
     return 0
 
 
@@ -111,8 +111,6 @@ def cmd_remove(args) -> int:
 
 
 def cmd_update(args) -> int:
-    if not args.all and not args.token:
-        return _err("name a subject or pass --all")
     targets = library.load_all() if args.all else library.find(args.token)
     if not targets:
         return _err("nothing to update")
@@ -147,8 +145,12 @@ def cmd_quote(args) -> int:
     text = lockscreen.quote(cfg, subject=args.subject, domain=args.domain,
                             source=args.source, seed=args.seed,
                             show_note=args.note)
-    if text is None:
+    if text is None and not library.load_all():
         print("No quotes stored yet — run: hyprmuse add \"Franz Kafka\"")
+        return 0
+    if text is None:
+        print("No stored quote passes --subject, --domain, --source "
+              "and the subjects config.toml enables")
         return 0
     print(text)
     return 0
@@ -187,8 +189,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_remove)
 
     sp = sub.add_parser("update", help="re-harvest stored subjects")
-    sp.add_argument("token", nargs="?", default="", help="source:id or part of the name")
-    sp.add_argument("--all", action="store_true", help="re-harvest every stored subject")
+    which = sp.add_mutually_exclusive_group(required=True)
+    which.add_argument("token", nargs="?", default="", help="source:id or part of the name")
+    which.add_argument("--all", action="store_true", help="re-harvest every stored subject")
     sp.set_defaults(func=cmd_update)
 
     sp = sub.add_parser("sources", help="list available sources")
