@@ -38,17 +38,27 @@ pipeline {
                             git merge-base HEAD "origin/$CHANGE_TARGET"
                         ''').trim()
                     } else {
-                        // A branch build: since the last successful build. With none, or a
-                        // force-push having removed it (a new job, or the gate newly added), it is
-                        // everything a release would ship: since the nearest v* release tag, else
-                        // since a commit of the empty tree, made here and never pushed, so a repo's
-                        // first release is judged whole, tests included.
+                        // A branch build: since the last successful build. When there is none (a
+                        // new job, or the gate newly added) or a force-push removed it, it is
+                        // everything a release would ship: since the latest v* release tag on
+                        // HEAD's parent, not on HEAD, whose own tag (publish tags main's head)
+                        // would leave nothing to judge; else since a commit of the empty tree,
+                        // made here and never pushed, so a repo's first release is judged whole,
+                        // tests included. A git failure fails the stage rather than read as "no
+                        // tag".
                         def previous = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT
                         def kept = previous && sh(returnStatus: true,
                                                   script: 'git cat-file -e "$GIT_PREVIOUS_SUCCESSFUL_COMMIT^{commit}"') == 0
                         base = kept ? previous : sh(returnStdout: true, script: '''
                             git fetch --quiet --tags origin
-                            if released=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD 2>/dev/null); then
+                            released=
+                            if git cat-file -e 'HEAD^1^{commit}' 2>/dev/null; then
+                                tags=$(git tag --list 'v[0-9]*' --merged 'HEAD^1')
+                                if [ -n "$tags" ]; then
+                                    released=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 'HEAD^1')
+                                fi
+                            fi
+                            if [ -n "$released" ]; then
                                 git rev-parse "$released^{commit}"
                             else
                                 empty=$(git hash-object -w -t tree /dev/null)

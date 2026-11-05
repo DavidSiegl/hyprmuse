@@ -35,6 +35,8 @@ and no tests.
 Jenkins builds every pull request and `main` with the `Jenkinsfile`, running `scripts/gate` over a pull request since
 its merge base and over `main` since its last successful build, and reports `continuous-integration/jenkins/pr-head`
 on each pull request through its GitHub App.
+A build of `main` with no earlier success to start from judges everything since the release before its commit, or the
+whole tree before the first release.
 
 Once that passes on a pull request's head commit, `.github/workflows/automerge.yml` merges it into `main` with a merge
 commit and deletes its branch: opening a pull request is handing it over. To keep one for a human, open it as a draft

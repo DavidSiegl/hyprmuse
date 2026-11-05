@@ -37,14 +37,13 @@
 #       a label).
 #
 # The release version is read at the commit (HEAD, TARGET), not from the work tree, from
-# the first of these files to hold one there, each raised with the tool beside it:
+# the first of these files to hold one there; `raised` names the tool that raises it
+# (bump_with):
 #
-#   pyproject.toml   [project] version             uv version --bump LEVEL
-#   Cargo.toml       [package] version, else       cargo set-version --bump LEVEL
-#                    [workspace.package] version     (cargo-edit)
-#   package.json     "version"                     npm version LEVEL --no-git-tag-version
-#   VERSION          its first line, a leading v   an edit
-#                    dropped (the tag adds one)
+#   pyproject.toml   [project] version
+#   Cargo.toml       [package] version, else [workspace.package] version
+#   package.json     "version"
+#   VERSION          its first line, a leading v dropped (the tag adds one)
 #
 # So a pyproject.toml whose version is dynamic yields to the Cargo.toml or VERSION that
 # holds it. TOML is read however a header or key may be spaced or indented, with either
@@ -137,9 +136,10 @@ toml_version() {
         }" | head -n 1
 }
 
-# Prints "FILE VERSION" for commit $1: the release version and the file that holds it, as
-# the header says. Exits 2 when no file there holds one.
+# Sets $version to the release version at commit $1 and $file to the file that holds it,
+# as the header says. Exits 2 when $1 is no commit or no file there holds one.
 version_at() {
+    git rev-parse --verify --quiet "$1^{commit}" >/dev/null || fail "no commit $1"
     for file in pyproject.toml Cargo.toml package.json VERSION; do
         git cat-file -e "$1:$file" 2>/dev/null || continue
         text=$(git show "$1:$file") || fail "cannot read $file at $1"
@@ -155,15 +155,12 @@ version_at() {
             VERSION) version=$(printf '%s\n' "$text" | head -n 1 | tr -d '\r[:space:]' |
                 sed 's/^[vV]//') ;;
         esac
-        if [ -n "$version" ]; then
-            echo "$file $version"
-            return
-        fi
+        [ -z "$version" ] || return 0
     done
     fail "no release version at $1: none in pyproject.toml, Cargo.toml, package.json or VERSION"
 }
 
-# Prints how to raise the version that file $1 holds, as the header lists.
+# Prints the command that raises the version file $1 holds (the header lists the files).
 bump_with() {
     case $1 in
         pyproject.toml) echo "uv version --bump LEVEL" ;;
@@ -235,18 +232,18 @@ raised() {
            exit 0 ;;
         *) fail "cannot diff the change since $target" ;;
     esac
-    old=$(version_at "origin/$target")
-    new=$(version_at HEAD)
-    oldfile=${old%% *} file=${new%% *} old=${old#* } new=${new#* }
-    if ! version_greater "$new" "$old"; then
-        echo "scripts/release: $file's version is $new, not greater than $old in $target's $oldfile;" \
+    version_at "origin/$target"
+    oldfile=$file old=$version
+    version_at HEAD
+    if ! version_greater "$version" "$old"; then
+        echo "scripts/release: $file's version is $version, not greater than $old in $target's $oldfile;" \
             "raise it with $(bump_with "$file"), or the merge goes unreleased" >&2
         exit 1
     fi
 }
 
 # Returns 0 when release v$version is due, as `due` says, 1 when it exists; exits 2 on
-# any other outcome, saying why. $file and $version are version_at's two fields.
+# any other outcome, saying why. version_at must have set $file and $version.
 is_due() {
     err=$(mktemp) || fail "cannot make a temporary file"
     trap 'rm -f "$err"' EXIT
@@ -279,8 +276,7 @@ is_due() {
 }
 
 due() {
-    version=$(version_at HEAD)
-    file=${version% *} version=${version#* }
+    version_at HEAD
     if is_due; then
         echo "v$version is due for release"
     else
@@ -290,8 +286,7 @@ due() {
 }
 
 publish() {
-    version=$(version_at HEAD)
-    file=${version% *} version=${version#* }
+    version_at HEAD
     tag="v$version"
     if ! is_due; then
         echo "$tag is already released"
