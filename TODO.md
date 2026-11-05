@@ -46,6 +46,29 @@ None recorded yet.
   `** Źródło: …` and `** Zobacz też: …` under a quote; when a quote has no `Źródło`,
   `wikiquote._read_bullet` takes the first sub-bullet, so `--note` shows "Zobacz też:
   …". Closed by skipping sub-bullets that only link related pages.
+- **Combined bibliography headings count as the subject's own words.** The bibliography
+  words in `wikiquote._NOT_THEIR_WORDS` ("notes", "références", "ссылки"…) must be the
+  whole heading, since they also open titles of the subject's works ("Notes on
+  Nursing"). So "Notes et références" (153 fr pages on 2026-11-05), "Notes and
+  references", "Notas y referencias", "Ссылки и примечания", "Note e riferimenti" and
+  "Anmerkungen und Einzelnachweise" are read. On the six live pages checked those
+  sections hold only the footnote list, so nothing is stored; a page that puts bullets
+  there would store them as quotes. Review 19, round 2. Closed by also matching, as a
+  whole heading, two bibliography words joined by the word for "and" of each edition
+  `_NOT_THEIR_WORDS` covers (en, de, fr, es, it, pt, pl, ru, nl).
+- **A title ending in a suffix takes the suffix as the surname.** `wikiquote._names_subject`
+  takes the title's last word outside parentheses, so for "Martin Luther King Jr." a
+  heading "About King" is not recognised as about the subject, and its quotes are
+  stored as the subject's own. en heads such sections "Quotes about …", which
+  `_NOT_THEIR_WORDS` skips anyway. Review 19, round 2. Closed by dropping a trailing
+  "Jr." or "Sr." before taking the last word. Roman numerals are not dropped: "Malcolm
+  X" and "Henry VIII" would then match on a first name, which `_names_subject` rules out.
+- **Narration after a sentence-ending quote becomes its source.**
+  `wikiquote._split_quote_and_note` treats any text after a closing mark as the source
+  when the quote ends in `.`, `!`, `?` or `…`, so `"Why would anyone do that?" he asked,
+  and left.` stores "he asked, and left." as the note. The `.` case is partly by design:
+  `"A sentence." Source` must keep its source. Review 19, round 2. Closed by telling
+  narration ("he asked", "she said") apart from a source while keeping that case.
 - **Names without a hash are moved only when their subject is next saved or removed.**
   Review 18, F4: "compatibility is attached to `save` and `remove` rather than done once",
   so `library._unhashed_file` stays in both paths, and any new write or delete path must
