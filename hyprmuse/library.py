@@ -23,10 +23,6 @@ def slugify(text: str) -> str:
     return norm or "unnamed"
 
 
-def subject_key(source: str, source_id: str) -> str:
-    return f"{source}:{source_id}"
-
-
 def subject_path(source: str, source_id: str) -> Path:
     """The file the subject ``source``/``source_id`` is saved to.
 
@@ -172,14 +168,18 @@ def load_all() -> list[Subject]:
 
 
 def find(token: str) -> list[Subject]:
-    """Resolve 'source:id', or a case-insensitive substring of the name."""
+    """The stored subjects a token on the command line means.
+
+    The subject whose ``key`` the token is, if one is stored; otherwise every
+    subject whose name contains the token, ignoring case. An empty token
+    means no subject.
+    """
+    if not token:
+        return []
     subjects = load_all()
-    if ":" in token:
-        src, _, sid = token.partition(":")
-        exact = [s for s in subjects
-                 if s.source == src and s.source_id == sid]
-        if exact:
-            return exact
+    exact = [s for s in subjects if s.key == token]
+    if exact:
+        return exact
     low = token.lower()
     return [s for s in subjects if low in s.name.lower()]
 

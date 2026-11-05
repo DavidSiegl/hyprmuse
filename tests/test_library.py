@@ -85,7 +85,18 @@ def test_remove_deletes_the_file():
 
 
 def test_subject_key_format():
-    assert library.subject_key("wikiquote", "de:X") == "wikiquote:de:X"
+    assert make_subject(source="wikiquote", source_id="de:X").key == "wikiquote:de:X"
+
+
+def test_find_prefers_a_key_over_a_name_containing_it():
+    library.save(make_subject(source_id="2", name="Keyed"))
+    library.save(make_subject(source_id="3", name="Tribute to genius:2"))
+    assert [s.name for s in library.find("genius:2")] == ["Keyed"]
+
+
+def test_find_with_an_empty_token_finds_nothing():
+    library.save(make_subject())
+    assert library.find("") == []
 
 
 def wikiquote(source_id, name):
