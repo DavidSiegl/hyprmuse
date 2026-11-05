@@ -125,13 +125,13 @@ class Wikiquote:
         if progress:
             progress(f"parsing {title} ({lang}.wikiquote.org)")
         api = self._api(lang)
-        data = self._client.json(api, params={
+        reply = self._client.json(api, params={
             "action": "parse", "page": title, "prop": "wikitext", "format": "json",
         })
         with reading(self.name, api):
-            if "error" in data:
-                raise SourceError(f"wikiquote: {data['error'].get('info', 'page not found')}")
-            items = parse_wikitext(data["parse"]["wikitext"]["*"])
+            if "error" in reply:
+                raise SourceError(f"wikiquote: {reply['error'].get('info', 'page not found')}")
+            items = parse_wikitext(reply["parse"]["wikitext"]["*"])
         if not items:
             raise SourceError(f"no quotes parsed from {title}")
         return Subject(

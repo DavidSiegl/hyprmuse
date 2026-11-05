@@ -20,7 +20,11 @@ BODIES = {
 
 @pytest.fixture
 def answer(monkeypatch):
-    """Make every request get HTTP 200 with the body passed in."""
+    """Make every request get HTTP 200 with the body passed in.
+
+    Returns the function that installs the body; the URLs requested are
+    appended to its ``urls`` list.
+    """
     def answer_with(body):
         class Response:
             status_code = 200
@@ -30,7 +34,12 @@ def answer(monkeypatch):
             def json(self):
                 return json.loads(body)
 
-        monkeypatch.setattr(base.requests, "get", lambda *_, **__: Response())
+        def get(url, *_, **__):
+            answer_with.urls.append(url)
+            return Response()
+
+        monkeypatch.setattr(base.requests, "get", get)
+    answer_with.urls = []
     return answer_with
 
 
@@ -40,8 +49,17 @@ def answer(monkeypatch):
 def test_unexpected_reply_is_a_source_error(answer, name, body, call):
     answer(BODIES[body])
     src = type(REGISTRY[name])(Client())
-    with pytest.raises(SourceError):
+    with pytest.raises(SourceError) as err:
         if call == "search":
             src.search("anything", "en")
         else:
             src.fetch(JSON_SOURCES[name])
+    # The error names the URL whose reply it could not read, and, when the
+    # reply was JSON of the wrong shape, the source that could not read it.
+    # PoetryDB reads any JSON object as its "not found" reply, which is a miss
+    # with its own message, not an unreadable reply.
+    msg = str(err.value)
+    if msg != "poetrydb: no poems for Emily Dickinson":
+        assert answer.urls[-1] in msg
+    if body != "html":
+        assert msg.startswith(f"{name}:")
