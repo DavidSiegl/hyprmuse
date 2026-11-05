@@ -85,7 +85,8 @@ class Gutenberg:
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
         resp = self._client.get(f"{BASE}/ebooks/search/", params={"query": query})
-        soup = BeautifulSoup(resp.text, "lxml")
+        # Not lxml: packaging/licenses/README.md says why.
+        soup = BeautifulSoup(resp.text, "html.parser")
         out = []
         for link in soup.select("li.booklink a.link"):
             href = link.get("href", "")

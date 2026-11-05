@@ -7,16 +7,17 @@ PyInstaller built it from, whose installed distributions it reads the license fi
 of; packaging/build-binary.sh runs it so and writes what it prints beside the binary.
 The notices cover:
 
-- the Python interpreter and the C libraries linked into it, and the C libraries
-  linked into lxml, from packaging/licenses/ (NATIVE_NOTICES);
+- the Python interpreter and the C libraries linked into it, from
+  packaging/licenses/ (NATIVE_NOTICES);
 - PyInstaller's bootloader;
 - every installed distribution other than hyprmuse that provides a top-level package
   or module the listing names, including the license files of what it vendors.
 
 Exits 1, naming each, when a bundled component has no license file to reproduce, so
 that a new dependency cannot reach a release without its notice; and when Python's
-minor version or lxml's version is not the one packaging/licenses/ was taken for
-(NOTICED_PYTHON, NOTICED_LXML), since another may link other C libraries.
+minor version is not the one packaging/licenses/ was taken for (NOTICED_PYTHON), since
+another may link other C libraries. A dependency that bundles C libraries of its own
+needs their notices added there too; this check cannot see them.
 """
 
 import platform
@@ -34,13 +35,12 @@ from pathlib import Path
 RULE = "=" * 79
 
 # The license texts of the code no distribution carries a license file for: what
-# python-build-standalone links into the interpreter, and what lxml's wheels link
-# statically. packaging/licenses/README.md says where each came from.
+# python-build-standalone links into the interpreter. packaging/licenses/README.md says
+# where each came from.
 NATIVE_LICENSES = Path(__file__).parent / "licenses"
 
-# The Python minor version and lxml version packaging/licenses/ was taken for.
+# The Python minor version packaging/licenses/ was taken for.
 NOTICED_PYTHON = "3.14"
-NOTICED_LXML = "6.0.2"
 
 # (title, files in NATIVE_LICENSES) per component, in the order the notices list them.
 NATIVE_NOTICES = [
@@ -58,10 +58,7 @@ NATIVE_NOTICES = [
     ("libuuid, linked into Python", ["libuuid.txt"]),
     ("ncurses, linked into Python", ["ncurses.txt"]),
     ("libedit, linked into Python", ["libedit.txt"]),
-    ("zlib, linked into Python and into lxml", ["zlib.txt"]),
-    ("libxml2, linked into lxml", ["libxml2.txt"]),
-    ("libxslt and libexslt, linked into lxml", ["libxslt.txt"]),
-    ("GNU libiconv, linked into lxml", ["libiconv.txt"]),
+    ("zlib, linked into Python", ["zlib.txt"]),
 ]
 
 
@@ -115,12 +112,10 @@ def section(title: str, texts: list[tuple[str, str]]) -> str:
 def main() -> int:
     """Print the notices for the listing on stdin to stdout; return the exit status."""
     python = ".".join(platform.python_version_tuple()[:2])
-    lxml = distribution("lxml").version
-    if (python, lxml) != (NOTICED_PYTHON, NOTICED_LXML):
+    if python != NOTICED_PYTHON:
         print(f"third_party_notices.py: packaging/licenses/ holds the C library notices of "
-              f"Python {NOTICED_PYTHON} and lxml {NOTICED_LXML}, but this build has Python "
-              f"{python} and lxml {lxml}; packaging/licenses/README.md says how to refresh "
-              "them", file=sys.stderr)
+              f"Python {NOTICED_PYTHON}, but this build has Python {python}; "
+              "packaging/licenses/README.md says how to refresh them", file=sys.stderr)
         return 1
     # (title, license files) per component, in the order the notices list them.
     components = [

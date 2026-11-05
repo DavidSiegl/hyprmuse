@@ -98,7 +98,8 @@ def lyrics_text(html: str) -> str | None:
     real break, so every line became its own stanza; since the selector slices
     within a stanza, no pick could ever be longer than a single line.
     """
-    soup = BeautifulSoup(html, "lxml")
+    # Not lxml: packaging/licenses/README.md says why.
+    soup = BeautifulSoup(html, "html.parser")
     containers = soup.find_all("div", attrs={"data-lyrics-container": "true"})
     if not containers:
         return None
