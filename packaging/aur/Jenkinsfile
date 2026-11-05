@@ -1,0 +1,53 @@
+// The hyprmuse-aur job: makes the AUR's hyprmuse-bin what packaging/aur/PKGBUILD on main gives
+// for the latest GitHub release, with packaging/aur/publish.sh. A build that finds the AUR
+// current pushes nothing.
+//
+// It holds the AUR push key, so it is a Pipeline job of its own, not part of the multibranch
+// job, whose pull-request builds run their own Jenkinsfiles on the untrusted agent before
+// review. It needs:
+//   - "Pipeline script from SCM" on this repository, branch main only, script path
+//     packaging/aur/Jenkinsfile, so only reviewed code sees the key;
+//   - in its folder's credential store, an "SSH Username with private key" credential with
+//     ID aur-hyprmuse-bin, username aur, whose public key is on the AUR account;
+//   - a node labelled trusted that no agent-written build can reach (Job Restrictions), with
+//     bash, curl, git, ssh and sha256sum;
+//   - one "Build Now" to create the AUR package, unless main builds first.
+pipeline {
+    agent { label 'trusted' }
+
+    triggers {
+        // After each successful build of main (the multibranch job's full name for it), which is
+        // when a release appears; daily too, so a failed run, or a main build that failed after
+        // releasing, is retried without waiting for the next merge.
+        upstream(upstreamProjects: 'hyprmuse/main', threshold: hudson.model.Result.SUCCESS)
+        cron('H H * * *')
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        timeout(time: 15, unit: 'MINUTES')
+        // Two builds both finding the AUR behind would both push; the second would be refused.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Publish') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'aur-hyprmuse-bin', keyFileVariable: 'AUR_KEY')]) {
+                    sh '''
+                        export GIT_SSH_COMMAND="ssh -i '$AUR_KEY' -o IdentitiesOnly=yes \
+                            -o UserKnownHostsFile='$PWD/packaging/aur/known_hosts' -o GlobalKnownHostsFile=/dev/null \
+                            -o StrictHostKeyChecking=yes"
+                        packaging/aur/publish.sh
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
