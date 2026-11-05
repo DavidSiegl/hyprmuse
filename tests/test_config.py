@@ -96,3 +96,8 @@ def test_a_section_that_is_not_a_table_is_ignored(capsys):
     assert cfg["lines"] == config.DEFAULTS["lines"]
     assert cfg["subjects"] == {}
     assert "[quote] is not a table" in capsys.readouterr().err
+
+
+def test_weighting_is_read():
+    _write('[quote]\nweighting = "quote"\n')
+    assert config.load_config()["weighting"] == "quote"

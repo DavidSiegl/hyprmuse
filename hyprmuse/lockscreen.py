@@ -52,9 +52,8 @@ def quote(cfg: dict, *, subject: str = "", domain: str = "", source: str = "",
         weights = [1.0] * len(pool)
     fit = _Fit(width=cfg["width"], max_lines=cfg["max_lines"], max_chars=cfg["max_chars"])
 
-    draw = dict(num_lines=cfg["lines"],
-                min_chars=cfg["min_line_chars"],
-                recent=recent if keep > 0 else [])
+    draw = {"num_lines": cfg["lines"], "min_chars": cfg["min_line_chars"],
+            "recent": recent if keep > 0 else []}
     chosen = _draw(pool, weights, rng, fit=fit, **draw)
     if chosen is None and fit != _UNCONSTRAINED:
         # Nothing in the library fits the box; a trimmed quote beats a blank

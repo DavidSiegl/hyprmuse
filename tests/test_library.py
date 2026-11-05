@@ -107,3 +107,13 @@ def test_load_all_skips_a_file_that_is_not_a_subject(stored):
     library.save(make_subject())
     (config.SUBJECTS_DIR / "broken.json").write_text(json.dumps(stored), encoding="utf-8")
     assert [s.source_id for s in library.load_all()] == ["1"]
+
+
+def test_load_all_gives_missing_optional_fields_their_defaults():
+    (config.SUBJECTS_DIR).mkdir(parents=True)
+    (config.SUBJECTS_DIR / "minimal.json").write_text(json.dumps(
+        {"source": "genius", "source_id": "2", "name": "B", "items": [{"lines": ["a"]}]}),
+        encoding="utf-8")
+    (subject,) = library.load_all()
+    assert (subject.domain, subject.lang, subject.url, subject.attribution) == ("unknown", "en", "", {})
+    assert (subject.items[0].work, subject.items[0].atomic, subject.items[0].note) == ("", False, "")

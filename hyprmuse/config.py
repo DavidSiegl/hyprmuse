@@ -62,35 +62,50 @@ def load_config() -> dict:
         raw = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return cfg
-    quote = _table(raw.get("quote", {}), "[quote]")
-    for key in DEFAULTS:
-        if key not in quote:
-            continue
-        given = quote[key]
-        if key == "weighting":
-            if given in WEIGHTINGS:
-                cfg[key] = given
-            else:
-                _ignore(f"[quote] {key}", given, f"one of {', '.join(map(repr, WEIGHTINGS))}")
-        elif (n := _number(given, LEAST[key])) is not None:
-            cfg[key] = int(n)
-        else:
-            _ignore(f"[quote] {key}", given, f"a number >= {LEAST[key]}")
+    cfg.update(_quote_settings(_table(raw.get("quote", {}), "[quote]")))
     for key, table in _table(raw.get("subjects", {}), "[subjects]").items():
-        where = f'[subjects."{key}"]'
-        given_settings = _table(table, where)
-        settings = subjects[key] = {}
-        if "enabled" in given_settings:
-            if isinstance(given_settings["enabled"], bool):
-                settings["enabled"] = given_settings["enabled"]
-            else:
-                _ignore(f"{where} enabled", given_settings["enabled"], "true or false")
-        if "weight" in given_settings:
-            if (n := _number(given_settings["weight"], 0)) is not None:
-                settings["weight"] = n
-            else:
-                _ignore(f"{where} weight", given_settings["weight"], "a number >= 0")
+        subjects[key] = _subject_settings(table, f'[subjects."{key}"]')
     return cfg
+
+
+def _quote_settings(given: dict) -> dict:
+    """The settings of DEFAULTS that the [quote] table ``given`` sets validly.
+
+    Warns about each one it leaves out.
+    """
+    settings = {}
+    for key in (k for k in DEFAULTS if k in given):
+        if key == "weighting":
+            if given[key] in WEIGHTINGS:
+                settings[key] = given[key]
+            else:
+                _ignore(f"[quote] {key}", given[key],
+                        f"one of {', '.join(map(repr, WEIGHTINGS))}")
+        elif (n := _number(given[key], LEAST[key])) is not None:
+            settings[key] = int(n)
+        else:
+            _ignore(f"[quote] {key}", given[key], f"a number >= {LEAST[key]}")
+    return settings
+
+
+def _subject_settings(table, where: str) -> dict:
+    """The "enabled" and "weight" that ``table``, found at ``where``, sets validly.
+
+    Warns about each one it leaves out, and about ``table`` not being a table.
+    """
+    given = _table(table, where)
+    settings: dict = {}
+    if "enabled" in given:
+        if isinstance(given["enabled"], bool):
+            settings["enabled"] = given["enabled"]
+        else:
+            _ignore(f"{where} enabled", given["enabled"], "true or false")
+    if "weight" in given:
+        if (n := _number(given["weight"], 0)) is not None:
+            settings["weight"] = n
+        else:
+            _ignore(f"{where} weight", given["weight"], "a number >= 0")
+    return settings
 
 
 def _table(given, where: str) -> dict:
