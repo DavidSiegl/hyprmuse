@@ -30,12 +30,19 @@ def clock(monkeypatch):
 def respond(monkeypatch, http_status=200, error=None):
     """Make requests.get answer with ``http_status``, or raise ``error``.
 
+    The body is empty, and its JSON is {}: every source's search reads that as
+    no hits.
+
     Returns the list each call's (args, kwargs) is appended to.
     """
     calls = []
 
     class Response:
         status_code = http_status
+        text = ""
+
+        def json(self):
+            return {}
 
     def get(*args, **kwargs):
         calls.append((args, kwargs))
@@ -104,28 +111,16 @@ def test_non_200_is_a_source_error(monkeypatch, clock):
         Client().get("https://example.org")
 
 
-class EmptyResponse:
-    """A 200 every source's search reads as no hits."""
-
-    status_code = 200
-    text = ""
-
-    def json(self):
-        return {}
-
-
 @pytest.mark.parametrize("name", sorted(REGISTRY))
 def test_only_wikiquote_identifies_as_hyprmuse(monkeypatch, clock, name):
-    agents = []
-
-    def get(*_, headers, **__):
-        agents.append(headers["User-Agent"])
-        return EmptyResponse()
-
-    monkeypatch.setattr(base.requests, "get", get)
-    REGISTRY[name].search("anything", "en")
+    # The registry's own source, to check the client it is really built with;
+    # its spacing is reset so the fake clock's time does not leak out.
+    src = REGISTRY[name]
+    monkeypatch.setattr(src._client, "_last_end", None)
+    calls = respond(monkeypatch)
+    src.search("anything", "en")
     expected = base.hyprmuse_user_agent() if name == "wikiquote" else base.BROWSER_USER_AGENT
-    assert agents == [expected]
+    assert {kwargs["headers"]["User-Agent"] for _, kwargs in calls} == {expected}
 
 
 def test_hyprmuse_agent_names_the_version_and_a_contact(monkeypatch):
