@@ -65,6 +65,7 @@ hyprmuse add "Element of Crime" --source genius
 hyprmuse add "Ingeborg Bachmann" --source wikiquote --lang de
 hyprmuse add "Emily Dickinson" --source poetrydb
 hyprmuse add "Frankenstein" --source gutenberg
+hyprmuse add "genius:342499"            # a source:id from search, harvested as is
 
 hyprmuse search "Nietzsche" --lang de   # look without harvesting
 hyprmuse list                           # what's stored

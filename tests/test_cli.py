@@ -352,3 +352,75 @@ def test_quote_and_list_skip_a_subject_file_of_the_wrong_shape(capsys):
     assert code == 0 and "—" in out.out
     code, out = run(["list"], capsys)
     assert code == 0 and "Broken" not in out.out
+
+
+@pytest.fixture
+def by_key(monkeypatch):
+    """Genius and Wikiquote stand-ins that record what add asks of them.
+
+    Returns a list of ("search", query) and ("fetch", source, source_id) calls.
+    """
+    from hyprmuse import sources
+    from hyprmuse.sources.base import Candidate
+    calls = []
+
+    class Recorder:
+        def __init__(self, name):
+            self.name = name
+
+        def search(self, query, lang):
+            calls.append(("search", query))
+            return [Candidate(self.name, "found", "Found", "music")]
+
+        def fetch(self, source_id, progress=None):
+            calls.append(("fetch", self.name, source_id))
+            return make_subject(source=self.name, source_id=source_id, name="Fetched")
+
+    for name in ("genius", "wikiquote"):
+        monkeypatch.setitem(sources.REGISTRY, name, Recorder(name))
+    return calls
+
+
+def test_add_fetches_the_subject_a_key_names_without_searching(capsys, by_key):
+    """Regression: add searched Genius for "genius:259534" and harvested an
+    unrelated artist."""
+    code, out = run(["add", "genius:123", "-y"], capsys)
+    assert code == 0 and by_key == [("fetch", "genius", "123")]
+    assert "Harvesting genius:123 from genius" in out.err
+
+
+def test_add_splits_a_key_on_its_first_colon_only(capsys, by_key):
+    code, _ = run(["add", "wikiquote:en:Arno Schmidt", "-y"], capsys)
+    assert code == 0 and by_key == [("fetch", "wikiquote", "en:Arno Schmidt")]
+
+
+@pytest.mark.parametrize("query", ["Franz Kafka", "Mr. T: The Book", "genius:"])
+def test_add_searches_a_query_that_is_not_a_key(capsys, by_key, query):
+    code, _ = run(["add", query, "-y", "--source", "genius"], capsys)
+    assert code == 0
+    assert by_key == [("search", query), ("fetch", "genius", "found")]
+
+
+def test_add_refuses_a_key_from_another_source_than_source_names(capsys, by_key):
+    code, out = run(["add", "genius:123", "--source", "wikiquote"], capsys)
+    assert code == 1 and by_key == []
+    assert "genius:123" in out.err and "wikiquote" in out.err
+
+
+def test_add_fails_on_a_key_its_source_cannot_fetch(capsys, monkeypatch, by_key):
+    from hyprmuse import sources
+
+    class Gone:
+        name = "genius"
+
+        def search(self, query, lang):
+            by_key.append(("search", query))
+            return []
+
+        def fetch(self, source_id, progress=None):
+            raise SourceError("genius: no artist 999")
+
+    monkeypatch.setitem(sources.REGISTRY, "genius", Gone())
+    code, out = run(["add", "genius:999", "-y"], capsys)
+    assert code == 1 and "no artist 999" in out.err
+    assert by_key == [] and library.load_all() == []

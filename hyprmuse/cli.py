@@ -4,7 +4,7 @@ import argparse
 import sys
 
 from . import config, library, lockscreen
-from .sources import AUTO_ORDER, REGISTRY, SourceError, get_source
+from .sources import AUTO_ORDER, REGISTRY, SourceError, get_source, split_key
 from .sources.base import Candidate
 
 
@@ -64,16 +64,24 @@ def cmd_search(args) -> int:
 
 
 def cmd_add(args) -> int:
+    named = split_key(args.query)
+    if named:
+        source, source_id = named
+        if args.source and args.source != source:
+            return _err(f"{args.query!r} is a {source} subject, not a {args.source} one")
+        name = args.query
+    else:
+        try:
+            cands = _gather(args.query, args.source, args.lang)
+        except SourceError as exc:
+            return _err(str(exc))
+        cand = _choose(cands, args.yes)
+        if cand is None:
+            return _err(f"no match chosen for {args.query!r}")
+        source, source_id, name = cand.source, cand.source_id, cand.name
+    print(f"Harvesting {name} from {source}…", file=sys.stderr)
     try:
-        cands = _gather(args.query, args.source, args.lang)
-    except SourceError as exc:
-        return _err(str(exc))
-    cand = _choose(cands, args.yes)
-    if cand is None:
-        return _err(f"no match chosen for {args.query!r}")
-    print(f"Harvesting {cand.name} from {cand.source}…", file=sys.stderr)
-    try:
-        subject = get_source(cand.source).fetch(cand.source_id, _progress)
+        subject = get_source(source).fetch(source_id, _progress)
     except SourceError as exc:
         return _err(str(exc))
     path = library.save(subject)
@@ -170,7 +178,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="language edition, for wikiquote (e.g. de)")
 
     sp = sub.add_parser("add", help="harvest a new subject")
-    sp.add_argument("query")
+    sp.add_argument("query", help="a name to search for, or a source:id that "
+                    "search printed, which is harvested without searching")
     add_search_flags(sp)
     sp.add_argument("--yes", "-y", action="store_true",
                     help="take the best match without prompting")

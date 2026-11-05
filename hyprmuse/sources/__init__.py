@@ -21,5 +21,19 @@ def get_source(name: str) -> Source:
         ) from None
 
 
-__all__ = ["REGISTRY", "AUTO_ORDER", "get_source", "Candidate", "Item",
-           "Source", "SourceError", "Subject"]
+def split_key(token: str) -> tuple[str, str] | None:
+    """The source name and source_id of the ``Subject.key`` a token is.
+
+    None when the text before the token's first colon is not a key of REGISTRY,
+    or nothing follows the colon: the token is then not a key but, say, a
+    title such as "Mr. T: The Book". Ids may hold colons themselves
+    ("wikiquote:en:Arno Schmidt" is wikiquote's "en:Arno Schmidt").
+    """
+    source, colon, source_id = token.partition(":")
+    if not colon or not source_id or source not in REGISTRY:
+        return None
+    return source, source_id
+
+
+__all__ = ["AUTO_ORDER", "REGISTRY", "Candidate", "Item", "Source", "SourceError",
+           "Subject", "get_source", "split_key"]
