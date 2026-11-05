@@ -25,8 +25,9 @@ project_version() {
 # under docs/: packaging/licenses/README.md ships in the binary. assets/ holds the logo
 # the README links from main, in no release asset. Each Jenkinsfile is CI. The AUR
 # package's PKGBUILD and .SRCINFO reach users without a release: the hyprmuse-aur job
-# publishes them for the latest one with pkgrel raised (packaging/aur/publish.sh). The
-# rest of packaging/ builds or describes what users install.
+# publishes them for the latest one, once the pull request has moved them there and
+# raised pkgrel itself (packaging/aur/publish.sh's header). The rest of packaging/ builds
+# or describes what users install.
 NOT_RELEASED=":(exclude)docs :(exclude,glob)*.md :(exclude)tests :(exclude)scripts
 :(exclude)Jenkinsfile :(exclude)packaging/aur/Jenkinsfile :(exclude)packaging/pypi/Jenkinsfile
 :(exclude)packaging/aur/PKGBUILD :(exclude)packaging/aur/.SRCINFO
