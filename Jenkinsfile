@@ -33,10 +33,12 @@ pipeline {
                 script {
                     def base
                     if (env.CHANGE_TARGET) {
-                        // A pull request: everything since it left its target branch.
+                        // A pull request: everything since it left its target branch, read
+                        // by its full ref, since a tag or branch named origin/<target> would
+                        // win over the short name (gitrevisions(7)).
                         base = sh(returnStdout: true, script: '''
                             git fetch --quiet origin "+refs/heads/$CHANGE_TARGET:refs/remotes/origin/$CHANGE_TARGET"
-                            git merge-base HEAD "origin/$CHANGE_TARGET"
+                            git merge-base HEAD "refs/remotes/origin/$CHANGE_TARGET"
                         ''').trim()
                     } else {
                         // A branch build: since the last successful build. When there is none (a
@@ -60,7 +62,7 @@ pipeline {
                                 fi
                             fi
                             if [ -n "$released" ]; then
-                                git rev-parse "$released^{commit}"
+                                git rev-parse "refs/tags/$released^{commit}"
                             else
                                 empty=$(git hash-object -w -t tree /dev/null)
                                 git -c user.name=gate -c user.email=gate@localhost -c commit.gpgSign=false \\
