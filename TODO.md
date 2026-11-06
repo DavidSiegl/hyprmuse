@@ -88,9 +88,10 @@ None recorded yet.
   remember it. Kept because a migration on load would make `hyprmuse quote`, which only
   reads, write to the library. Closed by a one-off migration that `add`, `update` and
   `remove` run before touching the store, after which `_unhashed_file` serves only it.
-- **The template's full-ref fix stops short of the gate and is written twice.** Review 31,
-  round 1: `scripts/gate`'s default BASE is the short name `main`, which a tag `main` would
-  shadow (F1); the Jenkinsfile's pull-request merge base copies `scripts/release raised`'s,
-  so the two must change together (F2); and `refs/tags/$released` in the Jenkinsfile has no
-  reason beside it, inviting a simplification back (F4). All three are agent-estate
-  template text, which `copier update` rewrites; closed there, then taken by an update.
+- **The gate's default base is main's tip, not the branch point.** Review 32, F1: CI judges a
+  pull request from `git merge-base HEAD refs/remotes/origin/<target>`, but a bare
+  `scripts/gate` diffs against `refs/heads/main` itself, so once main has moved on it judges
+  main's newer commits as reverse edits and can disagree with CI. Also from review 32: the
+  Jenkinsfile's `refs/tags/$released` borrows a reason that does not apply to tags (F2), and
+  the default is stated in both `docs/agents/README.md` and the gate's header (F3). All
+  agent-estate template text; closed there (a merge-base default), then taken by an update.

@@ -4,7 +4,8 @@
 # writes quality.md at the repo root, and pytest's JUnit report there, test-results.xml,
 # which the Jenkinsfile shows as the build's test results.
 #
-#   scripts/gate [BASE]     BASE is any git revision; default main.
+#   scripts/gate [BASE]     BASE is any git revision; default the branch main, read as
+#                           refs/heads/main so a tag main cannot stand in (gitrevisions(7)).
 #
 # A change to docs alone (docs/ and Markdown at the top level, the owner's rule of
 # 2026-11-05) runs no tests: gate.py then judges its linters' findings, such as
@@ -38,7 +39,7 @@ trap 'exit 2' ERR
 gate_commit=c0f6f32b5588ad19a781781406d8342849a9ca45 # octoflow-ai v0.57.5
 gate_sha256=2165e8f2217f473974a21f1c5538aa6887d1df56fbabfa11319226dfbfa180a3
 
-base=${1:-main}
+base_name=${1:-refs/heads/main}
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/octoflow-gate/$gate_commit"
 
 top=$(git rev-parse --show-toplevel)
@@ -47,6 +48,13 @@ cd "$top"
 # that writes none cannot leave gate.py the last run's, nor a run that ends early the last
 # verdict.
 rm -f test-results.xml coverage.xml quality.md
+
+# Resolved first: a BASE that is no commit fails before the download, and the tests, which
+# run later, cannot move a ref.
+if ! base=$(git rev-parse --verify --quiet "$base_name^{commit}"); then
+	echo "gate: $base_name is not a commit" >&2
+	exit 2
+fi
 
 # pinned FILE: whether FILE is the pinned gate.py.
 pinned() {
@@ -68,12 +76,6 @@ if [[ ! -f $cache/gate.py ]]; then
 	trap - EXIT
 fi
 
-# Resolved before the tests run, which could move a ref.
-if ! base=$(git rev-parse --verify --quiet "$base^{commit}"); then
-	echo "gate: ${1:-main} is not a commit" >&2
-	exit 2
-fi
-
 # docs_only: whether nothing outside the docs differs from BASE (the header).
 not_docs=(-- . ':(exclude)docs' ':(exclude,glob)*.md')
 docs_only=false
@@ -84,7 +86,7 @@ fi
 
 reports=()
 if $docs_only; then
-	echo "gate: only docs changed since ${1:-main}: no tests, linters only" >&2
+	echo "gate: only docs changed since $base_name: no tests, linters only" >&2
 else
 	# pytest exits 1 when tests failed, which the gate judges; anything else means the
 	# tests did not run (https://docs.pytest.org/en/stable/reference/exit-codes.html).

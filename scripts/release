@@ -222,7 +222,9 @@ raised() {
     git fetch --quiet origin "+refs/heads/$target:refs/remotes/origin/$target" ||
         fail "cannot fetch $target from origin"
     # The full ref, since a tag or branch named origin/<target> would win over the short
-    # name (gitrevisions(7)) and decide which version this one must exceed.
+    # name (gitrevisions(7)) and decide which version this one must exceed. Under Jenkins, the
+    # Jenkinsfile's Change stage fetches and reads a pull request's target alike: change both
+    # together.
     remote=refs/remotes/origin/$target
     exempt=$(exempt_at "$remote")
     base=$(git merge-base HEAD "$remote") || fail "no merge base with $target"
