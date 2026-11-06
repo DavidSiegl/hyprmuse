@@ -160,10 +160,12 @@ pipeline {
     post {
         always {
             archiveArtifacts artifacts: 'quality.md', allowEmptyArchive: true
-            // The JUnit reports scripts/gate left (its header), shown as the build's test results
-            // and never judged: a failing test in them leaves the result to the gate. None, as on
-            // a change to docs alone, is no error.
-            junit allowEmptyResults: true, skipMarkingBuildUnstable: true, testResults: 'test-results*.xml'
+            // The JUnit reports of the tests scripts/gate ran, which it leaves at the repo root,
+            // shown as the build's test results and never judged: neither the build's result nor
+            // a GitHub check (skipPublishingChecks) comes from them, so a failing test leaves the
+            // result to the gate. None, as on a change to docs alone, is no error.
+            junit allowEmptyResults: true, skipMarkingBuildUnstable: true, skipPublishingChecks: true,
+                  testResults: 'test-results.xml'
         }
         // Last, whatever the steps above did, so no build leaves the workspace to the next.
         cleanup {

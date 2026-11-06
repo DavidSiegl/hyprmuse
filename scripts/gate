@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run octoflow-ai's quality gate on this working tree: the tests with coverage (none for a
 # change to docs alone, below), then gate.py, which judges the change since BASE and
-# writes quality.md at the repo root. pytest's JUnit report, test-results.xml, is what
-# Jenkins publishes as the build's test results (the starter gate's header has that rule).
+# writes quality.md at the repo root, and pytest's JUnit report there, test-results.xml,
+# which the Jenkinsfile shows as the build's test results.
 #
 #   scripts/gate [BASE]     BASE is any git revision; default main.
 #
