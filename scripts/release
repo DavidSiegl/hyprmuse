@@ -221,8 +221,11 @@ raised() {
     target=$1
     git fetch --quiet origin "+refs/heads/$target:refs/remotes/origin/$target" ||
         fail "cannot fetch $target from origin"
-    exempt=$(exempt_at "origin/$target")
-    base=$(git merge-base HEAD "origin/$target") || fail "no merge base with $target"
+    # The full ref, since a tag or branch named origin/<target> would win over the short
+    # name (gitrevisions(7)) and decide which version this one must exceed.
+    remote=refs/remotes/origin/$target
+    exempt=$(exempt_at "$remote")
+    base=$(git merge-base HEAD "$remote") || fail "no merge base with $target"
     status=0
     touches_released "$base" "$exempt" || status=$?
     case $status in
@@ -232,7 +235,7 @@ raised() {
            exit 0 ;;
         *) fail "cannot diff the change since $target" ;;
     esac
-    version_at "origin/$target"
+    version_at "$remote"
     oldfile=$file old=$version
     version_at HEAD
     if ! version_greater "$version" "$old"; then
