@@ -35,7 +35,8 @@ pipeline {
                     if (env.CHANGE_TARGET) {
                         // A pull request: everything since it left its target branch, read
                         // by its full ref, since a tag or branch named origin/<target> would
-                        // win over the short name (gitrevisions(7)).
+                        // win over the short name (gitrevisions(7)). scripts/release raised
+                        // fetches and reads the target alike: change both together.
                         base = sh(returnStdout: true, script: '''
                             git fetch --quiet origin "+refs/heads/$CHANGE_TARGET:refs/remotes/origin/$CHANGE_TARGET"
                             git merge-base HEAD "refs/remotes/origin/$CHANGE_TARGET"
@@ -62,6 +63,7 @@ pipeline {
                                 fi
                             fi
                             if [ -n "$released" ]; then
+                                # The full ref, as for a pull request's target above.
                                 git rev-parse "refs/tags/$released^{commit}"
                             else
                                 empty=$(git hash-object -w -t tree /dev/null)

@@ -28,9 +28,9 @@ at its root.
 ## Quality gate
 
 `scripts/gate [BASE]` runs the tests with coverage and octoflow-ai's `gate.py` over the change since BASE (default
-`main`), writing `quality.md`. Run it before handing a branch to review; fix each issue it lists on changed lines, and
-fix or justify each finding to weigh. A change to docs alone (`docs/` and top-level Markdown) runs the gate's linters
-and no tests.
+the branch `main`), writing `quality.md`. Run it before handing a branch to review; fix each issue it lists on changed
+lines, and fix or justify each finding to weigh. A change to docs alone (`docs/` and top-level Markdown) runs the
+gate's linters and no tests.
 
 ## CI and merging
 
