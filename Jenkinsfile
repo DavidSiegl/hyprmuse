@@ -15,8 +15,9 @@ pipeline {
     options {
         buildDiscarder(logRotator(numToKeepStr: '30'))
         timeout(time: 60, unit: 'MINUTES')
-        // One build per branch at a time, so two builds of main cannot both find a
-        // version unreleased and race to release it (stage Release).
+        // One build per branch at a time, so a build's previous one has always finished.
+        // Two builds of main then cannot both find a version unreleased and race to release
+        // it (stage Release).
         disableConcurrentBuilds()
     }
 
@@ -159,6 +160,13 @@ pipeline {
     post {
         always {
             archiveArtifacts artifacts: 'quality.md', allowEmptyArchive: true
+            // The JUnit reports scripts/gate left (its header), shown as the build's test results
+            // and never judged: a failing test in them leaves the result to the gate. None, as on
+            // a change to docs alone, is no error.
+            junit allowEmptyResults: true, skipMarkingBuildUnstable: true, testResults: 'test-results*.xml'
+        }
+        // Last, whatever the steps above did, so no build leaves the workspace to the next.
+        cleanup {
             cleanWs()
         }
     }

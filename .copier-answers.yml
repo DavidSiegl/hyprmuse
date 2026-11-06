@@ -1,10 +1,11 @@
 # Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
-_commit: 2310a6f
+_commit: 64162e2
 _src_path: gh:DavidSiegl/agent-estate
 automerge: true
 ci: jenkins
 gate: python
 jenkins_agent_label: untrusted
+jenkins_notify_email: ''
 jenkins_release_credential: GitHub-Agents
 jenkins_status_login: davidsiegl-jenkins[bot]
 python_package: hyprmuse
