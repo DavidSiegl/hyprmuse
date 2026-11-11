@@ -206,8 +206,9 @@ class Client:
         credentials.
 
         Returns the response when the status is 200. Raises NotFound on a 404,
-        Unauthorized on a 401, and SourceError when the request fails
-        (connection, timeout) or the status is anything else.
+        Unauthorized on a 401 to a request that sent ``token``, and SourceError
+        when the request fails (connection, timeout) or the status is anything
+        else.
         """
         if self._last_end is not None:
             jitter = random.uniform(0.0, self._jitter)  # noqa: S311 - spacing, not secrecy
@@ -225,7 +226,7 @@ class Client:
             self._last_end = time.monotonic()
         if resp.status_code == 404:
             raise NotFound(f"{url} returned HTTP 404")
-        if resp.status_code == 401:
+        if resp.status_code == 401 and token is not None:
             raise Unauthorized(f"{url} returned HTTP 401")
         if resp.status_code != 200:
             raise SourceError(f"{url} returned HTTP {resp.status_code}")

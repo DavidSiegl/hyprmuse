@@ -115,8 +115,7 @@ def test_no_genius_token_when_none_is_set():
     assert config.genius_token() is None
 
 
-def test_genius_token_is_read_from_the_environment_first(monkeypatch):
-    _write('[genius]\naccess_token = "from-file"\n')
+def test_genius_token_drops_surrounding_whitespace(monkeypatch):
     monkeypatch.setenv(config.GENIUS_TOKEN_ENV, " from-env\n")
     assert config.genius_token() == "from-env"
 
@@ -132,3 +131,20 @@ def test_a_genius_token_that_is_not_a_string_is_ignored_and_named(capsys, toml):
     _write(toml)
     assert config.genius_token() is None
     assert "[genius]" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("token", ["abc\\ndef", "abc def", "abc\\tdef", "abcdéf"])
+def test_a_genius_token_no_header_can_carry_is_ignored_unrepeated(capsys, token):
+    """Review 33, F1: requests' error for such a header printed the token."""
+    _write(f'[genius]\naccess_token = "{token}"\n')
+    assert config.genius_token() is None
+    err = capsys.readouterr().err
+    assert "access_token" in err and "abc" not in err
+
+
+def test_an_unsendable_environment_token_falls_back_to_the_file(capsys, monkeypatch):
+    _write('[genius]\naccess_token = "from-file"\n')
+    monkeypatch.setenv(config.GENIUS_TOKEN_ENV, "abc\ndef")
+    assert config.genius_token() == "from-file"
+    err = capsys.readouterr().err
+    assert config.GENIUS_TOKEN_ENV in err and "abc" not in err

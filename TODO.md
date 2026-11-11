@@ -96,6 +96,22 @@ None recorded yet.
   song. Out of scope for the official-API ticket by its own terms. Closed by finding what
   Cloudflare keys the block on (address, User-Agent, TLS fingerprint) and either waiting
   it out or changing how lyrics requests look, then harvesting one artist end to end.
+  Review 33, F8: the API requests share that `Client` and so also "send the spoofed
+  browser User-Agent"; `hyprmuse_user_agent()` would suit them, if api.genius.com cares.
+- **The official Genius API was never called with a token.** Review 33, F2: `PER_PAGE =
+  50` (`hyprmuse/sources/genius.py`) comes from lyricsgenius's docs; "if the API turns
+  `per_page=50` down, every Genius search and harvest in 2.0.0 fails". The ticket's manual
+  check, `hyprmuse search Protomartyr --source genius` listing `genius:259534`, was not run
+  either. Closed by running that with a real token and fixing `PER_PAGE` if it is refused.
+- **Genius search may offer `add -y` an artist unrelated to the query.** Review 33, F4:
+  when the wanted artist is not among the 50 song hits, "`-y` harvests whichever unrelated
+  artist has the most hits"; F5: "contains" matches substrings, so "Eve" ranks "Steve
+  Lacy" with the near matches. Both follow the ticket's ordering in `_by_name_match`.
+  Closed by matching whole words and leaving `-y`'s pick to names that match at all.
+- **Genius reads config.toml on every API request.** Review 33, F6: `Genius._api` calls
+  `config.genius_token()` up to seven times a harvest, repeating a bad `access_token`'s
+  warning each time, and a source module reads user configuration on its request path.
+  Closed by resolving the token once where the source is built or called.
 - **The gate's default base is main's tip, not the branch point.** Review 32, F1: CI judges a
   pull request from `git merge-base HEAD refs/remotes/origin/<target>`, but a bare
   `scripts/gate` diffs against `refs/heads/main` itself, so once main has moved on it judges

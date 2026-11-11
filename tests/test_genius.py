@@ -6,6 +6,7 @@ from hyprmuse import cli, config, sources
 from hyprmuse.sources import genius
 from hyprmuse.sources.base import Candidate, SourceError, Unauthorized
 from hyprmuse.sources.genius import clean_lines
+from tests.test_config import _write as write_config
 
 # Every API request needs a token; the tests of what happens without one
 # remove it again.
@@ -236,11 +237,6 @@ def test_every_api_request_carries_the_token_and_no_lyrics_page_request_does(
     ]
 
 
-def _write_config(text):
-    config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    config.CONFIG_FILE.write_text(text, encoding="utf-8")
-
-
 def _token_sent(fake_client, fake_response):
     client = fake_client({search_url(fake_client, "x"): fake_response(
         {"response": {"hits": []}})})
@@ -250,13 +246,13 @@ def _token_sent(fake_client, fake_response):
 
 def test_the_environment_token_wins_over_config_toml(fake_client, fake_response,
                                                      genius_token):
-    _write_config('[genius]\naccess_token = "from-file"\n')
+    write_config('[genius]\naccess_token = "from-file"\n')
     assert _token_sent(fake_client, fake_response) == genius_token
 
 
 def test_config_toml_alone_gives_the_token(fake_client, fake_response, monkeypatch):
     monkeypatch.delenv(config.GENIUS_TOKEN_ENV)
-    _write_config('[genius]\naccess_token = "from-file"\n')
+    write_config('[genius]\naccess_token = "from-file"\n')
     assert _token_sent(fake_client, fake_response) == "from-file"
 
 

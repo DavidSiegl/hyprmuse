@@ -3,6 +3,7 @@
 import statistics
 import re
 from collections import Counter
+from collections.abc import Callable
 
 from .. import config
 from ..text import mark_stanzas
@@ -203,10 +204,9 @@ class Genius:
         The API searches songs, not artists, so each distinct primary artist
         among the hits is one candidate; ``_by_name_match`` says their order.
         """
-        reply = self._api("/search", {"q": query, "per_page": PER_PAGE})
-        artists: dict[str, Candidate] = {}  # by artist id, in order of first appearance
-        hits: Counter[str] = Counter()  # song hits per artist id
-        with reading(self.name, f"{API}/search"):
+        def candidates(reply: dict) -> list[Candidate]:
+            artists: dict[str, Candidate] = {}  # by artist id, in order of first appearance
+            hits: Counter[str] = Counter()  # song hits per artist id
             for hit in reply["hits"]:
                 if hit.get("type") != "song":
                     continue
@@ -218,15 +218,19 @@ class Genius:
                     source=self.name, source_id=artist_id,
                     name=primary.get("name") or query, domain=self.domain, hint="artist"))
                 hits[artist_id] += 1
-        return _by_name_match(query, list(artists.values()), hits)
+            return _by_name_match(query, list(artists.values()), hits)
 
-    def _api(self, path: str, params: dict) -> dict:
-        """The ``response`` object of the official API's reply to GET ``path``.
+        return self._api("/search", {"q": query, "per_page": PER_PAGE}, candidates)
 
-        Authenticates with the user's access token. Raises SourceError saying
-        how to set one when there is none or Genius rejects it, and as
-        ``Client.get`` and ``reading`` do when the request fails or the reply
-        has no ``response`` object.
+    def _api[T](self, path: str, params: dict, read: Callable[[dict], T]) -> T:
+        """What ``read`` makes of the ``response`` object of the official API's
+        reply to GET ``path`` with ``params``.
+
+        Authenticates with the user's access token. ``read`` picks the object
+        apart; its KeyError, TypeError and the like are blamed on the reply, as
+        in ``reading``. Raises SourceError saying how to set a token when there
+        is none or Genius rejects it, and as ``Client.get`` and ``reading`` do
+        when the request fails or the reply is not shaped as ``read`` expects.
         """
         token = config.genius_token()
         if token is None:
@@ -240,7 +244,7 @@ class Genius:
             response = resp.json()["response"]
             if not isinstance(response, dict):
                 raise TypeError(f"response is {response!r}")
-            return response
+            return read(response)
 
     def _songs(self, artist_id: str, progress=None) -> tuple[dict, list[dict]]:
         """The artist's own record and their songs among the MAX_SONGS most
@@ -273,17 +277,18 @@ class Genius:
         the reply is not shaped as expected, a primary_artist that is null or
         not an object included.
         """
-        path = f"/artists/{artist_id}/songs"
-        response = self._api(path, {"sort": "popularity", "per_page": PER_PAGE, "page": page})
-        with reading(self.name, f"{API}{path}"):
-            entries = []
+        def entries(response: dict) -> tuple[list[dict], int | None]:
+            listed = []
             for song in response.get("songs", []):
                 primary = song.get("primary_artist", {})
                 if not isinstance(primary, dict):
                     raise TypeError(f"primary_artist is {primary!r}")
-                entries.append({"title": song["title"], "url": song["url"],
-                                "primary_artist": primary})
-            return entries, response.get("next_page")
+                listed.append({"title": song["title"], "url": song["url"],
+                               "primary_artist": primary})
+            return listed, response.get("next_page")
+
+        return self._api(f"/artists/{artist_id}/songs",
+                         {"sort": "popularity", "per_page": PER_PAGE, "page": page}, entries)
 
     def _lyrics(self, url: str) -> str | None:
         """The lyrics on the song page at ``url``; None when it has none.

@@ -75,19 +75,35 @@ def genius_token() -> str | None:
 
     GENIUS_TOKEN_ENV wins when it is set and not blank; otherwise the string
     ``access_token`` in config.toml's [genius] table. Surrounding whitespace
-    is dropped. A value there that is not a string is ignored with a line on
-    stderr, and an unreadable file counts as setting nothing, as in
-    ``load_config``.
+    is dropped. A token that is not a string, or that holds inner whitespace,
+    control characters or non-ASCII ones, is ignored with a line on stderr
+    that does not repeat it: an HTTP header cannot carry it, and the error
+    requests raises for one would print the secret. An unreadable file counts
+    as setting nothing, as in ``load_config``.
     """
     if token := os.environ.get(GENIUS_TOKEN_ENV, "").strip():
-        return token
+        if _sendable(token):
+            return token
+        print(f"hyprmuse: {GENIUS_TOKEN_ENV} {_UNSENDABLE}; ignoring it", file=sys.stderr)
     given = _table(_read_file().get("genius", {}), "[genius]").get("access_token")
     if given is None:
         return None
     if not isinstance(given, str):
         _warn("[genius] access_token is not a string; ignoring it")
         return None
-    return given.strip() or None
+    token = given.strip()
+    if token and not _sendable(token):
+        _warn(f"[genius] access_token {_UNSENDABLE}; ignoring it")
+        return None
+    return token or None
+
+
+_UNSENDABLE = "holds whitespace, control or non-ASCII characters"
+
+
+def _sendable(token: str) -> bool:
+    """Whether ``token`` can go into an HTTP header as it is."""
+    return token.isascii() and token.isprintable() and " " not in token
 
 
 def _read_file() -> dict:

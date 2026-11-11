@@ -136,6 +136,14 @@ def test_401_is_unauthorized(monkeypatch, clock):
         Client().get("https://example.org", token="stale")
 
 
+def test_401_without_a_token_is_no_unauthorized(monkeypatch, clock):
+    """Review 33, F3: no token was sent, so there is none to fix."""
+    respond(monkeypatch, http_status=401)
+    with pytest.raises(SourceError, match="HTTP 401") as err:
+        Client().get("https://example.org")
+    assert not isinstance(err.value, Unauthorized)
+
+
 @pytest.mark.usefixtures("genius_token")
 @pytest.mark.parametrize("name", sorted(REGISTRY))
 def test_only_wikiquote_identifies_as_hyprmuse(monkeypatch, clock, name):
