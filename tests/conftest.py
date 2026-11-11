@@ -17,7 +17,15 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "SUBJECTS_DIR", data / "subjects")
     monkeypatch.setattr(config, "RECENT_FILE", data / "recent.json")
     monkeypatch.setattr(config, "CONFIG_FILE", conf / "config.toml")
+    monkeypatch.delenv(config.GENIUS_TOKEN_ENV, raising=False)
     return tmp_path
+
+
+@pytest.fixture
+def genius_token(monkeypatch):
+    """Set a Genius API access token in the environment, and return it."""
+    monkeypatch.setenv(config.GENIUS_TOKEN_ENV, "test-token")
+    return "test-token"
 
 
 class FakeResponse:
@@ -46,21 +54,24 @@ class FakeClient:
     ``routes`` maps a full URL (see ``url``) to the FakeResponse to return for
     it, or to a SourceError to raise in its place. A URL with no route raises
     NotFound, as an HTTP 404 would. ``requested`` lists every full URL asked
-    for, in order.
+    for, in order, and ``tokens`` the access token each of them carried (None
+    for none) at the same index.
     """
 
     def __init__(self, routes):
         self.routes = routes
         self.requested = []
+        self.tokens = []
 
     @staticmethod
     def url(url, params=None):
         """``url`` with ``params`` in its query string, as requests sends it."""
         return requests.Request("GET", url, params=params).prepare().url
 
-    def get(self, url, params=None):
+    def get(self, url, params=None, token=None):
         url = self.url(url, params)
         self.requested.append(url)
+        self.tokens.append(token)
         if url not in self.routes:
             raise NotFound(f"{url} returned HTTP 404")
         reply = self.routes[url]

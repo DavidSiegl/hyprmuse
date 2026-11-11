@@ -197,6 +197,7 @@ def test_update_all_goes_on_after_a_source_answers_garbage(capsys, monkeypatch,
     assert kafka.items[0].lines != ["old"]
 
 
+@pytest.mark.usefixtures("genius_token")
 def test_update_keeps_the_stored_subject_when_genius_is_rate_limited(capsys, monkeypatch,
                                                                     fake_client, fake_response):
     """Regression (#12): a re-harvest that lost songs to a 429 replaced the full one."""

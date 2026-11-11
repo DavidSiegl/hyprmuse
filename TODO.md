@@ -88,6 +88,14 @@ None recorded yet.
   remember it. Kept because a migration on load would make `hyprmuse quote`, which only
   reads, write to the library. Closed by a one-off migration that `add`, `update` and
   `remove` run before touching the store, after which `_unhashed_file` serves only it.
+- **Genius lyrics pages still go to genius.com, behind the Cloudflare block.** Search and
+  song lists moved to the official API (`hyprmuse/sources/genius.py`, `_api`), which
+  serves no lyrics, so `Genius._lyrics` still scrapes each song's page on genius.com as
+  Chrome 120. Cloudflare answered every hyprmuse request there with HTTP 403 after the
+  runaway harvest of 2026-11-05 (#43); if it still does, a harvest fails at the first
+  song. Out of scope for the official-API ticket by its own terms. Closed by finding what
+  Cloudflare keys the block on (address, User-Agent, TLS fingerprint) and either waiting
+  it out or changing how lyrics requests look, then harvesting one artist end to end.
 - **The gate's default base is main's tip, not the branch point.** Review 32, F1: CI judges a
   pull request from `git merge-base HEAD refs/remotes/origin/<target>`, but a bare
   `scripts/gate` diffs against `refs/heads/main` itself, so once main has moved on it judges

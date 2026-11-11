@@ -7,7 +7,7 @@ import requests
 from bs4.builder import HTMLParserTreeBuilder, builder_registry
 
 from hyprmuse.sources import REGISTRY, base
-from hyprmuse.sources.base import Client, NotFound, SourceError
+from hyprmuse.sources.base import Client, NotFound, SourceError, Unauthorized
 
 
 class Clock:
@@ -33,8 +33,8 @@ def clock(monkeypatch):
 def respond(monkeypatch, http_status=200, error=None):
     """Make requests.get answer with ``http_status``, or raise ``error``.
 
-    The body is empty, and its JSON is {}: every source's search reads that as
-    no hits.
+    The body is empty, and its JSON an empty Genius search reply, which every
+    source's search reads as no hits.
 
     Returns the list each call's (args, kwargs) is appended to.
     """
@@ -45,7 +45,7 @@ def respond(monkeypatch, http_status=200, error=None):
         text = ""
 
         def json(self):
-            return {}
+            return {"response": {"hits": []}}
 
     def get(*args, **kwargs):
         calls.append((args, kwargs))
@@ -122,6 +122,21 @@ def test_404_is_not_found(monkeypatch, clock):
         Client().get("https://example.org")
 
 
+def test_a_token_is_sent_as_a_bearer_token(monkeypatch, clock):
+    calls = respond(monkeypatch)
+    Client().get("https://example.org/api", token="secret")
+    ((_, kwargs),) = calls
+    assert kwargs["headers"] == {"User-Agent": base.BROWSER_USER_AGENT,
+                                 "Authorization": "Bearer secret"}
+
+
+def test_401_is_unauthorized(monkeypatch, clock):
+    respond(monkeypatch, http_status=401)
+    with pytest.raises(Unauthorized, match="HTTP 401"):
+        Client().get("https://example.org", token="stale")
+
+
+@pytest.mark.usefixtures("genius_token")
 @pytest.mark.parametrize("name", sorted(REGISTRY))
 def test_only_wikiquote_identifies_as_hyprmuse(monkeypatch, clock, name):
     # The registry's own source, to check the client it is really built with;

@@ -18,7 +18,7 @@ the lockscreen never waits on the network.
 | Source | Domain | Covers | Licence |
 |---|---|---|---|
 | `wikiquote` | quotations | authors, philosophers, scientists, films, TV, proverbs — editions `en`, `de`, `fr`, `es`, `it`, `pt`, `pl`, `ru`, `nl` | CC BY-SA |
-| `genius` | music | lyrics of an artist's 300 most popular songs | scraped, personal use |
+| `genius` | music | lyrics of an artist's 300 most popular songs; needs an [access token](#genius-access-token) | scraped, personal use |
 | `poetrydb` | poetry | ~130 classic poets, full poems | public domain |
 | `gutenberg` | prose | passages from public-domain books | public domain |
 
@@ -127,6 +127,28 @@ enabled = true
 
 `weighting = "subject"` is the default so a 162-song band does not drown out an
 author with nine quotes.
+
+### Genius access token
+
+Genius finds artists and lists their songs through its [official API](https://docs.genius.com),
+which needs an access token; without one, `genius` reports itself unavailable and
+`add` or `update` from it fails. Since 2.0.0 this is required, where earlier
+versions needed no setup. Create an API client at <https://genius.com/api-clients>,
+generate its access token, and put it in the environment, which keeps the secret out of
+a dotfiles repository and wins when both are set,
+
+```bash
+export GENIUS_ACCESS_TOKEN=...
+```
+
+or in `config.toml`, to set it once and forget it:
+
+```toml
+[genius]
+access_token = "..."
+```
+
+The lyrics themselves are still read from each song's page on genius.com.
 
 A setting of the wrong type or out of range, such as `width = "wide"` or
 `lines = 0`, keeps its default, and `hyprmuse quote` names it on stderr; the

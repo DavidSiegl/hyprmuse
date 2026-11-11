@@ -109,3 +109,26 @@ def test_a_file_that_is_not_utf8_falls_back_to_defaults():
     config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     config.CONFIG_FILE.write_bytes(b"[quote]\nlines = 4 # \xff\n")
     assert config.load_config()["lines"] == config.DEFAULTS["lines"]
+
+
+def test_no_genius_token_when_none_is_set():
+    assert config.genius_token() is None
+
+
+def test_genius_token_is_read_from_the_environment_first(monkeypatch):
+    _write('[genius]\naccess_token = "from-file"\n')
+    monkeypatch.setenv(config.GENIUS_TOKEN_ENV, " from-env\n")
+    assert config.genius_token() == "from-env"
+
+
+def test_a_blank_environment_token_leaves_the_file_s(monkeypatch):
+    _write('[genius]\naccess_token = "from-file"\n')
+    monkeypatch.setenv(config.GENIUS_TOKEN_ENV, "  ")
+    assert config.genius_token() == "from-file"
+
+
+@pytest.mark.parametrize("toml", ['[genius]\naccess_token = 5\n', 'genius = 5\n'])
+def test_a_genius_token_that_is_not_a_string_is_ignored_and_named(capsys, toml):
+    _write(toml)
+    assert config.genius_token() is None
+    assert "[genius]" in capsys.readouterr().err
