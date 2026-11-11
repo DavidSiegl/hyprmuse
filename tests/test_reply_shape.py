@@ -13,7 +13,7 @@ JSON_SOURCES = {"genius": "7", "poetrydb": "Emily Dickinson", "wikiquote": "en:S
 BODIES = {
     "html": "<html><body>Down for maintenance</body></html>",
     "list": json.dumps([1, 2]),
-    "keys": json.dumps({"response": {"songs": [{}], "sections": [{"type": "artist", "hits": [5]}]}, "query": {"search": [{}]},
+    "keys": json.dumps({"response": {"songs": [{}], "hits": [5]}, "query": {"search": [{}]},
                         "parse": {}, "authors": 5}),
 }
 
@@ -46,6 +46,7 @@ def answer(monkeypatch):
 @pytest.mark.parametrize("body", sorted(BODIES))
 @pytest.mark.parametrize("name", sorted(JSON_SOURCES))
 @pytest.mark.parametrize("call", ["search", "fetch"])
+@pytest.mark.usefixtures("genius_token")
 def test_unexpected_reply_is_a_source_error(answer, name, body, call):
     answer(BODIES[body])
     src = type(REGISTRY[name])(Client())

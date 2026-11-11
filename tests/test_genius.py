@@ -2,9 +2,15 @@
 
 import pytest
 
+from hyprmuse import cli, config, sources
 from hyprmuse.sources import genius
-from hyprmuse.sources.base import SourceError
+from hyprmuse.sources.base import Candidate, SourceError, Unauthorized
 from hyprmuse.sources.genius import clean_lines
+from tests.test_config import _write as write_config
+
+# Every API request needs a token; the tests of what happens without one
+# remove it again.
+pytestmark = pytest.mark.usefixtures("genius_token")
 
 SONG_LINES = [
     "The morning bus is always late",
@@ -136,7 +142,17 @@ def test_lyrics_text_without_a_container_is_none():
 
 def songs_url(fake_client, page, artist_id="7"):
     return fake_client.url(f"{genius.API}/artists/{artist_id}/songs",
-                           {"page": page, "sort": "popularity"})
+                           {"sort": "popularity", "per_page": 50, "page": page})
+
+
+def search_url(fake_client, query):
+    return fake_client.url(f"{genius.API}/search", {"q": query, "per_page": 50})
+
+
+def song_hit(artist_id, artist):
+    """A /search hit: a song whose primary artist is ``artist``."""
+    return {"type": "song", "result": {"title": "Some Song",
+                                       "primary_artist": {"id": artist_id, "name": artist}}}
 
 
 def song(title, artist_id=7, artist="Element of Crime"):
@@ -176,15 +192,122 @@ def test_fetch_follows_the_song_list_across_pages(fake_client, fake_response):
     assert client.requested[:2] == [songs_url(fake_client, 1), songs_url(fake_client, 2)]
 
 
-def test_search_offers_only_artist_hits_with_an_id(fake_client, fake_response):
-    url = fake_client.url(f"{genius.API}/search/artist", {"q": "element"})
-    client = fake_client({url: fake_response({"response": {"sections": [
-        {"type": "song", "hits": [{"result": {"id": 1, "name": "A Song"}}]},
-        {"type": "artist", "hits": [{"result": {"id": 7, "name": "Element of Crime"}},
-                                    {"result": {"name": "No Id"}}]},
-    ]}})})
-    hits = genius.Genius(client).search("element")
-    assert [(h.source_id, h.name) for h in hits] == [("7", "Element of Crime")]
+def test_search_offers_each_primary_artist_once_best_name_match_first(fake_client,
+                                                                     fake_response):
+    """Song search ranks by song popularity; the artist asked for must still
+    come first, since add -y takes the first candidate."""
+    client = fake_client({search_url(fake_client, "Protomartyr"): fake_response(
+        {"response": {"hits": [
+            song_hit(1, "Popular Band"),
+            song_hit(1, "Popular Band"),
+            song_hit(2, "Protomartyr & Friends"),
+            song_hit(3, "Rare Band"),
+            song_hit(4, "The Protomartyr Tribute"),
+            song_hit(4, "The Protomartyr Tribute"),
+            {"type": "song", "result": {"primary_artist": {"name": "No Id"}}},
+            {"type": "lyric", "result": {"primary_artist": {"id": 6, "name": "Protomartyr"}}},
+            song_hit(5, " protomartyr! "),
+        ]}})})
+    hits = genius.Genius(client).search("Protomartyr")
+    assert [(h.source_id, h.name) for h in hits] == [
+        ("5", " protomartyr! "),            # equal, ignoring case and punctuation
+        ("4", "The Protomartyr Tribute"),   # contains it, with more hits
+        ("2", "Protomartyr & Friends"),     # contains it
+        ("1", "Popular Band"),              # neither, with more hits
+        ("3", "Rare Band"),
+    ]
+    assert client.requested == [search_url(fake_client, "Protomartyr")]
+
+
+def test_every_api_request_carries_the_token_and_no_lyrics_page_request_does(
+        fake_client, fake_response, genius_token):
+    client = fake_client({
+        search_url(fake_client, "eoc"): fake_response({"response": {"hits": []}}),
+        songs_url(fake_client, 1): fake_response(
+            {"response": {"next_page": None, "songs": [song("Delmenhorst")]}}),
+        "https://genius.com/delmenhorst": fake_response(text=PAGE),
+    })
+    source = genius.Genius(client)
+    source.search("eoc")
+    source.fetch("7")
+    assert list(zip(client.requested, client.tokens, strict=True)) == [
+        (search_url(fake_client, "eoc"), genius_token),
+        (songs_url(fake_client, 1), genius_token),
+        ("https://genius.com/delmenhorst", None),
+    ]
+
+
+def _token_sent(fake_client, fake_response):
+    client = fake_client({search_url(fake_client, "x"): fake_response(
+        {"response": {"hits": []}})})
+    genius.Genius(client).search("x")
+    return client.tokens[0]
+
+
+def test_the_environment_token_wins_over_config_toml(fake_client, fake_response,
+                                                     genius_token):
+    write_config('[genius]\naccess_token = "from-file"\n')
+    assert _token_sent(fake_client, fake_response) == genius_token
+
+
+def test_config_toml_alone_gives_the_token(fake_client, fake_response, monkeypatch):
+    monkeypatch.delenv(config.GENIUS_TOKEN_ENV)
+    write_config('[genius]\naccess_token = "from-file"\n')
+    assert _token_sent(fake_client, fake_response) == "from-file"
+
+
+@pytest.mark.parametrize("call", ["search", "fetch"])
+def test_without_a_token_genius_says_how_to_set_one(fake_client, monkeypatch, call):
+    monkeypatch.delenv(config.GENIUS_TOKEN_ENV)
+    client = fake_client({})
+    with pytest.raises(SourceError) as err:
+        if call == "search":
+            genius.Genius(client).search("x")
+        else:
+            genius.Genius(client).fetch("7")
+    _assert_says_how_to_set_a_token(str(err.value))
+    assert client.requested == []
+
+
+def test_a_reply_whose_response_is_not_an_object_is_a_source_error(fake_client,
+                                                                  fake_response):
+    client = fake_client({search_url(fake_client, "x"): fake_response({"response": []})})
+    with pytest.raises(SourceError, match="unexpected reply"):
+        genius.Genius(client).search("x")
+
+
+def test_a_rejected_token_says_how_to_set_one(fake_client):
+    url = search_url(fake_client, "x")
+    client = fake_client({url: Unauthorized(f"{url} returned HTTP 401")})
+    with pytest.raises(SourceError) as err:
+        genius.Genius(client).search("x")
+    assert "rejected" in str(err.value)
+    _assert_says_how_to_set_a_token(str(err.value))
+
+
+def _assert_says_how_to_set_a_token(msg):
+    assert "https://genius.com/api-clients" in msg
+    assert "GENIUS_ACCESS_TOKEN" in msg
+    assert "[genius]" in msg and str(config.CONFIG_FILE) in msg
+
+
+def test_search_across_sources_without_a_token_still_answers_from_the_others(
+        monkeypatch, capsys):
+    monkeypatch.delenv(config.GENIUS_TOKEN_ENV)
+
+    class Answers:
+        def __init__(self, name):
+            self.name = name
+
+        def search(self, query, lang):
+            return [Candidate(self.name, "1", query, "any")]
+
+    for name in sources.AUTO_ORDER:
+        if name != "genius":
+            monkeypatch.setitem(sources.REGISTRY, name, Answers(name))
+    found = cli._gather("x", None, None)
+    assert [c.source for c in found] == [n for n in sources.AUTO_ORDER if n != "genius"]
+    assert "genius unavailable" in capsys.readouterr().err
 
 
 def test_fetch_skips_a_song_genius_has_no_page_for(fake_client, fake_response):

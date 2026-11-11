@@ -41,6 +41,10 @@ MOST = 1_000_000
 # The values "weighting" takes.
 WEIGHTINGS = ("subject", "quote")
 
+# The environment variable that holds the Genius API access token; it wins
+# over config.toml's [genius] access_token.
+GENIUS_TOKEN_ENV = "GENIUS_ACCESS_TOKEN"  # noqa: S105 - a variable's name, not a token
+
 
 def load_config() -> dict:
     """Merge config.toml over DEFAULTS, falling back on whatever is broken.
@@ -59,16 +63,55 @@ def load_config() -> dict:
     """
     subjects: dict[str, dict] = {}
     cfg = {**DEFAULTS, "subjects": subjects}
-    if not CONFIG_FILE.exists():
-        return cfg
-    try:
-        raw = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except (OSError, ValueError):  # ValueError: not UTF-8, or not TOML
-        return cfg
+    raw = _read_file()
     cfg.update(_quote_settings(_table(raw.get("quote", {}), "[quote]")))
     for key, table in _table(raw.get("subjects", {}), "[subjects]").items():
         subjects[key] = _subject_settings(table, f'[subjects."{key}"]')
     return cfg
+
+
+def genius_token() -> str | None:
+    """The Genius API access token the user set; None when there is none.
+
+    GENIUS_TOKEN_ENV wins when it is set and not blank; otherwise the string
+    ``access_token`` in config.toml's [genius] table. Surrounding whitespace
+    is dropped. A token that is not a string, or that holds inner whitespace,
+    control characters or non-ASCII ones, is ignored with a line on stderr
+    that does not repeat it: an HTTP header cannot carry it, and the error
+    requests raises for one would print the secret. An unreadable file counts
+    as setting nothing, as in ``load_config``.
+    """
+    if token := os.environ.get(GENIUS_TOKEN_ENV, "").strip():
+        if _sendable(token):
+            return token
+        print(f"hyprmuse: {GENIUS_TOKEN_ENV} {_UNSENDABLE}; ignoring it", file=sys.stderr)
+    given = _table(_read_file().get("genius", {}), "[genius]").get("access_token")
+    if given is None:
+        return None
+    if not isinstance(given, str):
+        _warn("[genius] access_token is not a string; ignoring it")
+        return None
+    token = given.strip()
+    if token and not _sendable(token):
+        _warn(f"[genius] access_token {_UNSENDABLE}; ignoring it")
+        return None
+    return token or None
+
+
+_UNSENDABLE = "holds whitespace, control or non-ASCII characters"
+
+
+def _sendable(token: str) -> bool:
+    """Whether ``token`` can go into an HTTP header as it is."""
+    return token.isascii() and token.isprintable() and " " not in token
+
+
+def _read_file() -> dict:
+    """config.toml's top-level tables; {} when it is missing or unparsable."""
+    try:
+        return tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):  # missing or unreadable; not UTF-8, or not TOML
+        return {}
 
 
 def _quote_settings(given: dict) -> dict:

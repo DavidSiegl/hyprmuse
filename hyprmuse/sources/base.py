@@ -57,6 +57,14 @@ class NotFound(SourceError):
     """
 
 
+class Unauthorized(SourceError):
+    """The provider refused the access token a request carried (HTTP 401).
+
+    Asking again with the same token will not change it; the user has to set
+    a valid one.
+    """
+
+
 @contextmanager
 def reading(source: str, url: str) -> Iterator[None]:
     """Report a reply from ``url`` that does not have the shape ``source`` expects.
@@ -189,27 +197,37 @@ class Client:
         # time.monotonic() when the previous request ended; None before the first.
         self._last_end: float | None = None
 
-    def get(self, url: str, params: dict | None = None) -> requests.Response:
+    def get(self, url: str, params: dict | None = None,
+            token: str | None = None) -> requests.Response:
         """GET ``url`` with ``params`` as its query string, after waiting out the gap.
 
+        With ``token``, the request authenticates with it as an OAuth 2 bearer
+        token (``Authorization: Bearer <token>``); without, it sends no
+        credentials.
+
         Returns the response when the status is 200. Raises NotFound on a 404,
-        and SourceError when the request fails (connection, timeout) or the
-        status is anything else.
+        Unauthorized on a 401 to a request that sent ``token``, and SourceError
+        when the request fails (connection, timeout) or the status is anything
+        else.
         """
         if self._last_end is not None:
             jitter = random.uniform(0.0, self._jitter)  # noqa: S311 - spacing, not secrecy
             wait = self._gap + jitter - (time.monotonic() - self._last_end)
             if wait > 0:
                 time.sleep(wait)
+        headers = {"User-Agent": self._user_agent}
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
         try:
-            resp = requests.get(url, params=params, headers={"User-Agent": self._user_agent},
-                                timeout=TIMEOUT)
+            resp = requests.get(url, params=params, headers=headers, timeout=TIMEOUT)
         except requests.RequestException as exc:
             raise SourceError(f"request to {url} failed: {exc}") from exc
         finally:
             self._last_end = time.monotonic()
         if resp.status_code == 404:
             raise NotFound(f"{url} returned HTTP 404")
+        if resp.status_code == 401 and token is not None:
+            raise Unauthorized(f"{url} returned HTTP 401")
         if resp.status_code != 200:
             raise SourceError(f"{url} returned HTTP {resp.status_code}")
         return resp

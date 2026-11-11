@@ -2,18 +2,33 @@
 
 import statistics
 import re
+from collections import Counter
+from collections.abc import Callable
 
+from .. import config
 from ..text import mark_stanzas
-from .base import Candidate, Client, Item, NotFound, SourceError, Subject, parse_html, reading
+from .base import (Candidate, Client, Item, NotFound, SourceError, Subject, Unauthorized,
+                   parse_html, reading)
 
-API = "https://genius.com/api"
+# The official API (https://docs.genius.com). It serves search and song lists,
+# not lyrics, which are scraped from each song's page on genius.com.
+API = "https://api.genius.com"
+
+# Where a user creates the access token every API request needs.
+API_CLIENTS_PAGE = "https://genius.com/api-clients"
+
+# Most results the API returns per page, of search hits and of song-list
+# entries alike. 50 is the limit lyricsgenius documents for both
+# (https://lyricsgenius.readthedocs.io/en/master/reference/api.html); it was
+# not checked against the live API, which needs a token to answer at all.
+PER_PAGE = 50
 
 # Most entries of an artist's song list one harvest reads, the most popular
 # first; the artist's own songs among them are harvested. Without a bound, a
 # wrong match with ~23,000 songs paged the song list for half an hour until
 # Genius answered HTTP 403 and blocked the machine (#43). Songs the artist is
 # only featured on count too, since listing them costs requests all the same.
-# The largest artist in the author's library has 164 songs; 300 is 15 pages of 20.
+# The largest artist in the author's library has 164 songs; 300 is 6 pages of 50.
 MAX_SONGS = 300
 
 # Boilerplate Genius injects into the lyrics container.
@@ -139,6 +154,41 @@ def _own_songs(listed: list[dict], artist_id: str) -> tuple[dict, list[dict]]:
     return artist, songs
 
 
+def _token_help() -> str:
+    """Tells the user how to get an API access token and where to put it."""
+    return (f"Create a client at {API_CLIENTS_PAGE}, generate its access token, and set it in "
+            f"the environment variable {config.GENIUS_TOKEN_ENV} or as access_token in "
+            f"the [genius] table of {config.CONFIG_FILE}.")
+
+
+def _by_name_match(query: str, artists: list[Candidate],
+                   hits: Counter[str]) -> list[Candidate]:
+    """``artists``, given in order of first appearance among the search hits,
+    best match for ``query`` first; ``hits`` counts each one's song hits by
+    ``source_id``.
+
+    Names equal to the query come first, then names containing it, then the
+    rest, each compared ignoring case, punctuation and runs of whitespace;
+    within each group, more song hits first, then first appearance. Song
+    search ranks by song popularity, so first appearance alone would bury an
+    artist named exactly as asked under a popular song of the same name, and
+    ``add -y`` takes the first candidate.
+    """
+    wanted = _comparable(query)
+
+    def rank(artist: Candidate) -> tuple[int, int]:
+        have = _comparable(artist.name)
+        group = 0 if have == wanted else 1 if wanted in have else 2
+        return group, -hits[artist.source_id]
+
+    return sorted(artists, key=rank)  # stable, so ties keep first appearance
+
+
+def _comparable(name: str) -> str:
+    """``name`` casefolded, punctuation dropped, whitespace runs one space."""
+    return " ".join(re.sub(r"[^\w\s]", "", name.casefold()).split())
+
+
 class Genius:
     name = "genius"
     domain = "music"
@@ -149,25 +199,52 @@ class Genius:
         self._client = client
 
     def search(self, query: str, lang: str = "en") -> list[Candidate]:
-        api_url = f"{API}/search/artist"
-        resp = self._client.get(api_url, params={"q": query})
-        hits = []
-        with reading(self.name, api_url):
-            for section in resp.json().get("response", {}).get("sections", []):
-                if section.get("type") != "artist":
+        """The primary artists of the songs Genius finds for ``query``.
+
+        The API searches songs, not artists, so each distinct primary artist
+        among the hits is one candidate; ``_by_name_match`` says their order.
+        """
+        def candidates(reply: dict) -> list[Candidate]:
+            artists: dict[str, Candidate] = {}  # by artist id, in order of first appearance
+            hits: Counter[str] = Counter()  # song hits per artist id
+            for hit in reply["hits"]:
+                if hit.get("type") != "song":
                     continue
-                for hit in section.get("hits", []):
-                    res = hit.get("result", {})
-                    if not res.get("id"):
-                        continue
-                    hits.append(Candidate(
-                        source=self.name,
-                        source_id=str(res["id"]),
-                        name=res.get("name", query),
-                        domain=self.domain,
-                        hint="artist",
-                    ))
-        return hits
+                primary = hit["result"].get("primary_artist") or {}
+                if not primary.get("id"):
+                    continue
+                artist_id = str(primary["id"])
+                artists.setdefault(artist_id, Candidate(
+                    source=self.name, source_id=artist_id,
+                    name=primary.get("name") or query, domain=self.domain, hint="artist"))
+                hits[artist_id] += 1
+            return _by_name_match(query, list(artists.values()), hits)
+
+        return self._api("/search", {"q": query, "per_page": PER_PAGE}, candidates)
+
+    def _api[T](self, path: str, params: dict, read: Callable[[dict], T]) -> T:
+        """What ``read`` makes of the ``response`` object of the official API's
+        reply to GET ``path`` with ``params``.
+
+        Authenticates with the user's access token. ``read`` picks the object
+        apart; its KeyError, TypeError and the like are blamed on the reply, as
+        in ``reading``. Raises SourceError saying how to set a token when there
+        is none or Genius rejects it, and as ``Client.get`` and ``reading`` do
+        when the request fails or the reply is not shaped as ``read`` expects.
+        """
+        token = config.genius_token()
+        if token is None:
+            raise SourceError(f"genius needs an API access token. {_token_help()}")
+        url = f"{API}{path}"
+        try:
+            resp = self._client.get(url, params=params, token=token)
+        except Unauthorized as exc:
+            raise SourceError(f"Genius rejected the API access token. {_token_help()}") from exc
+        with reading(self.name, url):
+            response = resp.json()["response"]
+            if not isinstance(response, dict):
+                raise TypeError(f"response is {response!r}")
+            return read(response)
 
     def _songs(self, artist_id: str, progress=None) -> tuple[dict, list[dict]]:
         """The artist's own record and their songs among the MAX_SONGS most
@@ -200,18 +277,18 @@ class Genius:
         the reply is not shaped as expected, a primary_artist that is null or
         not an object included.
         """
-        api_url = f"{API}/artists/{artist_id}/songs"
-        resp = self._client.get(api_url, params={"page": page, "sort": "popularity"})
-        with reading(self.name, api_url):
-            response = resp.json().get("response", {})
-            entries = []
+        def entries(response: dict) -> tuple[list[dict], int | None]:
+            listed = []
             for song in response.get("songs", []):
                 primary = song.get("primary_artist", {})
                 if not isinstance(primary, dict):
                     raise TypeError(f"primary_artist is {primary!r}")
-                entries.append({"title": song["title"], "url": song["url"],
-                                "primary_artist": primary})
-            return entries, response.get("next_page")
+                listed.append({"title": song["title"], "url": song["url"],
+                               "primary_artist": primary})
+            return listed, response.get("next_page")
+
+        return self._api(f"/artists/{artist_id}/songs",
+                         {"sort": "popularity", "per_page": PER_PAGE, "page": page}, entries)
 
     def _lyrics(self, url: str) -> str | None:
         """The lyrics on the song page at ``url``; None when it has none.
@@ -251,5 +328,5 @@ class Genius:
 
 
 # Lyrics pages are scraped one after another, so the gap is long and jittered;
-# it spaces the API calls the same way, as they go to the same host.
+# it spaces the API calls the same way, as both go to Genius.
 SOURCE = Genius(Client(gap=1.0, jitter=1.5))
